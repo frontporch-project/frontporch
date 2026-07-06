@@ -98,6 +98,11 @@ class AsteriskConfigRendererTests(SimpleTestCase):
                     digits="4",
                     normalized_number="+16465550100",
                 ),
+                DialShortcutRule(
+                    source_endpoint=self.alex_endpoint,
+                    digits="5",
+                    target_endpoint=self.luca_landline,
+                ),
             ),
             public_inbound_numbers=(
                 PublicInboundNumber(
@@ -151,6 +156,7 @@ class AsteriskConfigRendererTests(SimpleTestCase):
         self.assertIn("exten => 102,1,Dial(PJSIP/emma,30)", content)
         self.assertIn("exten => 2222,1,Dial(PJSIP/12125550100@voipms-endpoint,30)", content)
         self.assertIn("exten => 4,1,Dial(PJSIP/16465550100@voipms-endpoint,30)", content)
+        self.assertIn("exten => 5,1,Dial(PJSIP/16465550100@voipms-endpoint,30)", content)
         self.assertIn("[frontporch-emma]", content)
         self.assertIn("exten => 3,1,Dial(PJSIP/12125550100@voipms-endpoint,30)", content)
         self.assertNotIn("exten => 101,1,Dial(PJSIP/alex,30)", content)

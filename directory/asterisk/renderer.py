@@ -98,7 +98,7 @@ class AsteriskConfigRenderer:
             target_endpoint = None
         else:
             target_endpoint = rule.target_endpoint
-            dial_target = f"PJSIP/{target_endpoint.endpoint_name}"
+            dial_target = target_endpoint.dial_target
         return self._render_call_lines(
             f"exten => {rule.digits},1,",
             source_endpoint=rule.source_endpoint,
