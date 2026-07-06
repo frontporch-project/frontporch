@@ -1,0 +1,134 @@
+# Contributing
+
+FrontPorch is early-stage infrastructure for families and children. Contributions should favor clarity, safety, and maintainability over speed or novelty.
+
+## Development Workflow
+
+Before making changes:
+
+1. Read `README.md`, `ARCHITECTURE.md`, and `AGENTS.md`.
+2. Identify whether the change affects application policy, PBX behavior, networking, or documentation.
+3. Keep changes small and reviewable.
+4. Prefer explicit tests for behavior that affects permissions, generated configuration, or security.
+
+The Django foundation already exists. Application changes should extend the current `frontporch` project and `directory` app deliberately, preserving the boundary that Django owns policy and Asterisk enforces generated runtime configuration.
+
+For larger changes, open or draft a proposal that explains:
+
+- What parent, guardian, child, or administrator workflow changes.
+- Whether the change affects discovery, contact approval, inbound calling, outbound calling, conference calls, or generated PBX configuration.
+- What denial-case tests prove unsafe paths remain blocked.
+- What operational or deployment data must stay private.
+
+## Safety Rules
+
+FrontPorch is kid-adjacent communication infrastructure. Do not contribute features that weaken the parent/admin-controlled safety model.
+
+Contributions must not introduce:
+
+- Features that bypass parent, guardian, or administrator approval.
+- Public child profiles.
+- Open contact discovery or searchable child/family directories.
+- Unrestricted outbound calling.
+- Unknown inbound calling to children unless a future design explicitly requires parent/admin approval and default-deny routing.
+- Tests, examples, screenshots, docs, fixtures, migrations, or seed data containing real family names, child names, phone numbers, addresses, emails, neighborhoods, provider accounts, logs, recordings, or call history.
+
+Use reserved example phone numbers such as `202-555-0199` and fictional names in public examples.
+
+## Coding Standards
+
+Use boring, readable code.
+
+Guidelines:
+
+- Prefer explicit models and straightforward control flow.
+- Avoid clever abstractions.
+- Avoid unnecessary dependencies.
+- Keep business rules in the Django application, not in hand-edited Asterisk configuration.
+- Keep generated output deterministic.
+- Use names from the domain: family, parent, guardian, child, device, relationship, contact, permission, conference.
+- Treat SIP extensions, phone numbers, credentials, and device identifiers as implementation details.
+
+For Django application code:
+
+- Keep models explicit and well-named.
+- Put permission logic in testable application code.
+- Avoid hiding important policy in templates, signals, migrations, or generated files.
+- Validate inputs before generating infrastructure configuration.
+- Make unsafe states impossible where practical and obvious where not.
+
+## Testing Expectations
+
+Tests should grow with risk.
+
+High-priority test areas:
+
+- Relationship approval rules
+- Direct call permission decisions
+- Conference eligibility
+- External number normalization and deduplication
+- Family-private contact names
+- Generated Asterisk configuration
+- Default-deny behavior
+- Audit event creation
+
+Configuration generation should have snapshot-style or structured tests that prove the same application state produces the same output.
+
+Security-sensitive tests should include denial cases, not only allowed cases.
+
+Run the test suite locally before submitting application changes:
+
+```bash
+uv run python manage.py test
+```
+
+For local setup, copy `.env.example` to `.env`, fill in local-only values, run migrations, and create an admin user:
+
+```bash
+cp .env.example .env
+uv run python manage.py migrate
+uv run python manage.py createsuperuser
+```
+
+## Documentation Expectations
+
+Documentation is part of the product.
+
+Update documentation when a change affects:
+
+- Architecture
+- Security assumptions
+- Parent-facing behavior
+- Hardware setup
+- Network topology
+- Operational procedures
+- Development workflow
+
+Prefer clear prose over exhaustive internal detail. The project should remain understandable to future contributors and operators.
+
+## Infrastructure Expectations
+
+FrontPorch should use infrastructure as code wherever practical.
+
+Infrastructure changes should be:
+
+- Reproducible
+- Reviewable
+- Documented
+- Conservative about public exposure
+- Compatible with private networking over Tailscale
+
+Do not introduce public SIP exposure, port forwarding requirements, or vendor-specific lock-in without explicit architectural discussion.
+
+## Review Priorities
+
+When reviewing changes, prioritize:
+
+1. Child safety and default-deny behavior
+2. Privacy and data boundaries
+3. Correctness of relationship and permission logic
+4. Deterministic infrastructure generation
+5. Operational simplicity
+6. Readability and maintainability
+
+If a change makes the system harder for parents or operators to understand, it should have a strong reason.

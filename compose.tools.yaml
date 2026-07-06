@@ -1,0 +1,8 @@
+services:
+  git:
+    image: alpine/git
+    working_dir: /workspace
+    volumes:
+      - ${WORKSPACE:-.}:/workspace
+      - ${SSH_DIR:-${HOME}/.ssh}:/root/.ssh:ro
+    entrypoint: ["git"]

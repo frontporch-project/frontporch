@@ -1,0 +1,142 @@
+from dataclasses import dataclass
+import phonenumbers
+
+
+@dataclass(frozen=True)
+class BlackoutWindow:
+    time_range: str
+    days: str
+
+
+@dataclass(frozen=True)
+class SipEndpoint:
+    device_id: int
+    owner_type: str
+    owner_id: int
+    owner_display_name: str
+    family_id: int
+    extension: str
+    username: str
+    secret: str
+    child_id: int | None = None
+    blackout_windows: tuple[BlackoutWindow, ...] = ()
+
+    @property
+    def endpoint_name(self):
+        return self.username
+
+    @property
+    def auth_name(self):
+        return self.username
+
+    @property
+    def aor_name(self):
+        return self.username
+
+    @property
+    def context_name(self):
+        return f"frontporch-{self.username}"
+
+
+@dataclass(frozen=True)
+class DialplanRule:
+    source_endpoint: SipEndpoint
+    target_endpoint: SipEndpoint
+
+    @property
+    def dialed_extension(self):
+        return self.target_endpoint.extension
+
+
+@dataclass(frozen=True)
+class ExternalDialplanRule:
+    source_endpoint: SipEndpoint
+    external_number_extension_id: int
+    dialed_extension: str
+    normalized_number: str
+
+    @property
+    def outbound_number(self):
+        return self.normalized_number.removeprefix("+")
+
+
+@dataclass(frozen=True)
+class InboundExternalCallerRule:
+    public_phone_number_id: int
+    caller_normalized_number: str
+    target_endpoint: SipEndpoint
+
+    @property
+    def caller_id_variants(self):
+        variants = [self.caller_normalized_number]
+        without_plus = self.caller_normalized_number.removeprefix("+")
+        if without_plus not in variants:
+            variants.append(without_plus)
+
+        try:
+            parsed = phonenumbers.parse(self.caller_normalized_number, None)
+        except phonenumbers.NumberParseException:
+            return tuple(variants)
+
+        national_number = str(parsed.national_number)
+        if national_number not in variants:
+            variants.append(national_number)
+        return tuple(variants)
+
+
+@dataclass(frozen=True)
+class DialShortcutRule:
+    source_endpoint: SipEndpoint
+    digits: str
+    target_endpoint: SipEndpoint | None = None
+    external_number_extension_id: int | None = None
+    normalized_number: str = ""
+
+    @property
+    def is_external(self):
+        return self.external_number_extension_id is not None
+
+    @property
+    def outbound_number(self):
+        return self.normalized_number.removeprefix("+")
+
+
+@dataclass(frozen=True)
+class PublicInboundNumber:
+    public_phone_number_id: int
+    normalized_number: str
+    label: str
+    family_id: int | None = None
+
+    @property
+    def inbound_context_name(self):
+        return "frontporch-public-inbound"
+
+    @property
+    def canonical_extension(self):
+        return self.normalized_number.removeprefix("+")
+
+    @property
+    def dialplan_extensions(self):
+        extensions = [self.canonical_extension]
+        try:
+            parsed = phonenumbers.parse(self.normalized_number, None)
+        except phonenumbers.NumberParseException:
+            return tuple(extensions)
+
+        national_number = str(parsed.national_number)
+        if national_number not in extensions:
+            extensions.append(national_number)
+        if self.normalized_number not in extensions:
+            extensions.append(self.normalized_number)
+        return tuple(extensions)
+
+
+@dataclass(frozen=True)
+class AsteriskConfiguration:
+    endpoints: tuple[SipEndpoint, ...]
+    dialplan_rules: tuple[DialplanRule, ...]
+    external_dialplan_rules: tuple[ExternalDialplanRule, ...] = ()
+    inbound_external_caller_rules: tuple[InboundExternalCallerRule, ...] = ()
+    shortcut_rules: tuple[DialShortcutRule, ...] = ()
+    public_inbound_numbers: tuple[PublicInboundNumber, ...] = ()

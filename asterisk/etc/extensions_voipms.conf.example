@@ -1,0 +1,12 @@
+; FrontPorch VoIP.ms dialplan hook.
+;
+; Copy this file to /etc/asterisk/extensions_voipms.conf on the deployed
+; Asterisk host only if provider-specific dialplan glue is needed.
+;
+; Public DID handling is generated from Django PublicPhoneNumber records into
+; conf.d/extensions_frontporch.conf under the frontporch-public-inbound context.
+; The VoIP.ms PJSIP endpoint points there directly.
+;
+; This file is intentionally empty for the first trunk milestone. It does not
+; route callers to children, provide voicemail, implement IVR behavior, enable
+; outbound PSTN calling, or implement 911.

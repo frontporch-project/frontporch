@@ -1,0 +1,173 @@
+{% extends "directory/base.html" %}
+
+{% block title %}Family Dashboard - FrontPorch{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ parent.family.name }}</p>
+    <h1>Family Dashboard</h1>
+  </div>
+  <a class="button primary" href="{% url 'directory:child_create' %}">Add Child</a>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <h2>Child Cards</h2>
+  </div>
+  <div class="child-grid">
+    {% for child in children %}
+      <article class="card child-card">
+        <div class="card-title-row">
+          <h3>{{ child.name }}</h3>
+          <a href="{% url 'directory:child_update' child.id %}">Edit</a>
+        </div>
+        {% if child.notes %}
+          <p>{{ child.notes }}</p>
+        {% endif %}
+        <div class="subsection">
+          <div class="card-title-row">
+            <h4>Blackout Periods</h4>
+            <a href="{% url 'directory:blackout_create' child.id %}">Add</a>
+          </div>
+          <ul class="plain-list">
+            {% for blackout in child.blackout_periods.all %}
+              <li class="{% if not blackout.is_active %}muted{% endif %}">
+                <span>{{ blackout.label }}: {{ blackout.get_day_group_display }}, {{ blackout.start_time|time:"g:i A" }} to {{ blackout.end_time|time:"g:i A" }}</span>
+                <span class="actions">
+                  <a href="{% url 'directory:blackout_update' blackout.id %}">Edit</a>
+                  {% if blackout.is_active %}
+                    <form action="{% url 'directory:blackout_deactivate' blackout.id %}" method="post">
+                      {% csrf_token %}
+                      <button class="link-button" type="submit">Deactivate</button>
+                    </form>
+                  {% endif %}
+                </span>
+              </li>
+            {% empty %}
+              <li class="muted">No blackout periods yet.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </article>
+    {% empty %}
+      <p class="empty-state">Add a child card to start setting up calling permissions.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section split">
+  <div>
+    <div class="section-heading">
+      <h2>Family Contacts</h2>
+      <a class="button" href="{% url 'directory:contact_create' %}">Add Contact</a>
+    </div>
+    <ul class="panel-list">
+      {% for contact in contacts %}
+        <li>
+          <strong>{{ contact.label }}</strong>
+          <span>{{ contact.external_phone_number.normalized_number }}</span>
+        </li>
+      {% empty %}
+        <li class="muted">No family contacts yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div>
+    <div class="section-heading">
+      <h2>Contact Permissions</h2>
+      <a class="button" href="{% url 'directory:external_contact_permission_create' %}">Allow Contact</a>
+    </div>
+    <ul class="panel-list">
+      {% for permission in contact_permissions %}
+        <li class="{% if not permission.is_active %}muted{% endif %}">
+          <strong>{{ permission.child.name }}</strong>
+          <span>{{ permission.external_phone_number.normalized_number }}</span>
+          {% if permission.is_active %}
+            <form action="{% url 'directory:external_contact_permission_revoke' permission.id %}" method="post">
+              {% csrf_token %}
+              <button class="link-button" type="submit">Revoke</button>
+            </form>
+          {% else %}
+            <span>Revoked</span>
+          {% endif %}
+        </li>
+      {% empty %}
+        <li class="muted">No approved contact permissions yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="section split">
+  <div>
+    <div class="section-heading">
+      <h2>Family Permissions</h2>
+      <a class="button" href="{% url 'directory:child_family_relationship_request' %}">Request Permission</a>
+    </div>
+    <ul class="panel-list">
+      {% for relationship in outgoing_relationships %}
+        <li class="{% if not relationship.is_active %}muted{% endif %}">
+          <strong>{{ relationship.child.name }}</strong>
+          <span>{{ relationship.target_family.name }}</span>
+          <span>{% if relationship.is_active %}Approved{% else %}Pending{% endif %}</span>
+          <form action="{% url 'directory:child_family_relationship_revoke' relationship.id %}" method="post">
+            {% csrf_token %}
+            <button class="link-button" type="submit">Revoke</button>
+          </form>
+        </li>
+      {% empty %}
+        <li class="muted">No family permissions requested yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div>
+    <div class="section-heading">
+      <h2>Permission Requests</h2>
+    </div>
+    <ul class="panel-list">
+      {% for relationship in incoming_relationships %}
+        <li class="{% if not relationship.is_active %}muted{% endif %}">
+          <strong>{{ relationship.child.name }}</strong>
+          <span>{{ relationship.child.family.name }}</span>
+          {% if relationship.approved_by_target_family_guardian %}
+            <form action="{% url 'directory:child_family_relationship_revoke' relationship.id %}" method="post">
+              {% csrf_token %}
+              <button class="link-button" type="submit">Revoke</button>
+            </form>
+          {% else %}
+            <form action="{% url 'directory:child_family_relationship_approve' relationship.id %}" method="post">
+              {% csrf_token %}
+              <button class="link-button" type="submit">Approve</button>
+            </form>
+          {% endif %}
+        </li>
+      {% empty %}
+        <li class="muted">No incoming permission requests.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <h2>Conference Groups</h2>
+    <a class="button" href="{% url 'directory:conference_group_create' %}">Add Group</a>
+  </div>
+  <ul class="panel-list">
+    {% for group in conference_groups %}
+      <li class="{% if not group.is_active %}muted{% endif %}">
+        <strong>{{ group.name }}</strong>
+        <span>
+          {% for member in group.members.all %}
+            {{ member.name }}{% if not forloop.last %}, {% endif %}
+          {% endfor %}
+        </span>
+        <a href="{% url 'directory:conference_group_update' group.id %}">Edit</a>
+      </li>
+    {% empty %}
+      <li class="muted">No conference groups yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

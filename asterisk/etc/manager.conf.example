@@ -1,0 +1,18 @@
+; FrontPorch Asterisk Manager Interface example.
+;
+; Copy this file to /etc/asterisk/manager.conf on the deployed Asterisk host
+; and replace the placeholder values before enabling automated reloads.
+;
+; Bind AMI only to a private host-reachable address. Do not expose this port
+; to the public Internet.
+
+[general]
+enabled = yes
+port = 5038
+bindaddr = 100.64.0.10
+
+[frontporch-reload]
+secret = CHANGE_ME
+read = command
+write = command
+permit = 100.64.0.0/255.192.0.0

@@ -1,0 +1,294 @@
+from datetime import time
+
+from django.contrib.auth.models import User
+from django.test import TestCase
+from django.urls import reverse
+
+from directory.models import (
+    AllowedChildFamilyRelationship,
+    Child,
+    ChildBlackoutPeriod,
+    ConferenceGroup,
+    ExternalContactPermission,
+    ExternalPhoneNumber,
+    Family,
+    FamilyContact,
+    Parent,
+)
+
+
+class ParentPortalTests(TestCase):
+    def setUp(self):
+        self.family = Family.objects.create(name="River House")
+        self.other_family = Family.objects.create(name="Maple House")
+        self.user = User.objects.create_user(username="mara", password="secret-pass")
+        self.parent = Parent.objects.create(
+            user=self.user,
+            family=self.family,
+            display_name="Mara",
+            email="mara@example.com",
+        )
+        self.other_user = User.objects.create_user(username="nico", password="secret-pass")
+        self.other_parent = Parent.objects.create(
+            user=self.other_user,
+            family=self.other_family,
+            display_name="Nico",
+            email="nico@example.com",
+        )
+        self.child = Child.objects.create(family=self.family, name="Alex")
+        self.other_child = Child.objects.create(family=self.other_family, name="Emma")
+
+    def login(self):
+        self.client.login(username="mara", password="secret-pass")
+
+    def test_registration_creates_user_family_and_parent_profile(self):
+        response = self.client.post(
+            reverse("directory:register"),
+            {
+                "username": "new-parent",
+                "email": "parent@example.com",
+                "password1": "strong-test-pass-123",
+                "password2": "strong-test-pass-123",
+                "family_name": "Oak House",
+                "display_name": "Taylor",
+                "phone": "212-555-0100",
+            },
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        user = User.objects.get(username="new-parent")
+        parent = user.frontporch_parent
+        self.assertEqual(parent.family.name, "Oak House")
+        self.assertEqual(parent.display_name, "Taylor")
+
+    def test_dashboard_only_lists_authenticated_parent_family_children(self):
+        self.login()
+
+        response = self.client.get(reverse("directory:dashboard"))
+
+        self.assertContains(response, "Alex")
+        self.assertNotContains(response, "Emma")
+
+    def test_parent_can_create_child_only_in_their_family(self):
+        self.login()
+
+        self.client.post(
+            reverse("directory:child_create"),
+            {"name": "Luca", "notes": "Kitchen phone later."},
+        )
+
+        child = Child.objects.get(name="Luca")
+        self.assertEqual(child.family, self.family)
+
+    def test_parent_cannot_edit_another_family_child(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:child_update", args=[self.other_child.id]),
+            {"name": "Changed", "notes": ""},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.other_child.refresh_from_db()
+        self.assertEqual(self.other_child.name, "Emma")
+
+    def test_parent_can_manage_child_blackout_periods_for_family_child(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:blackout_create", args=[self.child.id]),
+            {
+                "label": "School night bedtime",
+                "day_group": ChildBlackoutPeriod.WEEKDAYS,
+                "start_time": "20:30",
+                "end_time": "23:00",
+                "is_active": "on",
+                "notes": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        blackout = ChildBlackoutPeriod.objects.get(child=self.child)
+        self.assertEqual(blackout.approved_by, self.parent)
+        self.assertEqual(blackout.start_time, time(20, 30))
+
+        self.client.post(reverse("directory:blackout_deactivate", args=[blackout.id]))
+        blackout.refresh_from_db()
+        self.assertFalse(blackout.is_active)
+        self.assertEqual(blackout.approved_by, self.parent)
+
+    def test_blackout_periods_are_scoped_to_parent_family(self):
+        blackout = ChildBlackoutPeriod.objects.create(
+            child=self.other_child,
+            label="Maple bedtime",
+            day_group=ChildBlackoutPeriod.EVERY_DAY,
+            start_time=time(20, 0),
+            end_time=time(22, 0),
+            approved_by=self.other_parent,
+        )
+        self.login()
+
+        response = self.client.post(reverse("directory:blackout_deactivate", args=[blackout.id]))
+
+        self.assertEqual(response.status_code, 404)
+        blackout.refresh_from_db()
+        self.assertTrue(blackout.is_active)
+
+    def test_parent_can_add_family_contact_and_approve_for_child(self):
+        self.login()
+        self.client.post(
+            reverse("directory:contact_create"),
+            {
+                "label": "Grandma",
+                "phone_number": "(212) 555-0100",
+                "notes": "",
+            },
+        )
+        contact = FamilyContact.objects.get(family=self.family, label="Grandma")
+
+        response = self.client.post(
+            reverse("directory:external_contact_permission_create"),
+            {
+                "child": self.child.id,
+                "external_phone_number": contact.external_phone_number.id,
+                "notes": "Sunday calls are okay.",
+            },
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        permission = ExternalContactPermission.objects.get(child=self.child)
+        self.assertTrue(permission.is_active)
+        self.assertEqual(permission.approved_by, self.parent)
+
+        self.client.post(
+            reverse("directory:external_contact_permission_revoke", args=[permission.id])
+        )
+        permission.refresh_from_db()
+        self.assertFalse(permission.is_active)
+
+    def test_parent_can_request_family_permission_by_exact_family_name(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:child_family_relationship_request"),
+            {
+                "child": self.child.id,
+                "target_family_name": "Maple House",
+                "notes": "Cousins.",
+            },
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        relationship = AllowedChildFamilyRelationship.objects.get(child=self.child)
+        self.assertEqual(relationship.target_family, self.other_family)
+        self.assertEqual(relationship.approved_by_child_family_guardian, self.parent)
+        self.assertIsNone(relationship.approved_by_target_family_guardian)
+        self.assertFalse(relationship.is_active)
+
+    def test_family_permission_request_rejects_unknown_family_name(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:child_family_relationship_request"),
+            {
+                "child": self.child.id,
+                "target_family_name": "Unknown House",
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(AllowedChildFamilyRelationship.objects.exists())
+
+    def test_target_family_parent_can_approve_incoming_family_permission(self):
+        relationship = AllowedChildFamilyRelationship.objects.create(
+            child=self.child,
+            target_family=self.other_family,
+            approved_by_child_family_guardian=self.parent,
+        )
+        self.client.login(username="nico", password="secret-pass")
+
+        response = self.client.post(
+            reverse("directory:child_family_relationship_approve", args=[relationship.id])
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        relationship.refresh_from_db()
+        self.assertEqual(relationship.approved_by_target_family_guardian, self.other_parent)
+        self.assertTrue(relationship.is_active)
+
+    def test_non_target_family_parent_cannot_approve_family_permission(self):
+        third_family = Family.objects.create(name="Oak House")
+        relationship = AllowedChildFamilyRelationship.objects.create(
+            child=self.other_child,
+            target_family=third_family,
+            approved_by_child_family_guardian=self.other_parent,
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:child_family_relationship_approve", args=[relationship.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+        relationship.refresh_from_db()
+        self.assertIsNone(relationship.approved_by_target_family_guardian)
+
+    def test_parent_revokes_only_their_side_of_family_permission(self):
+        relationship = AllowedChildFamilyRelationship.objects.create(
+            child=self.child,
+            target_family=self.other_family,
+            approved_by_child_family_guardian=self.parent,
+            approved_by_target_family_guardian=self.other_parent,
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:child_family_relationship_revoke", args=[relationship.id])
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        relationship.refresh_from_db()
+        self.assertIsNone(relationship.approved_by_child_family_guardian)
+        self.assertEqual(relationship.approved_by_target_family_guardian, self.other_parent)
+        self.assertFalse(relationship.is_active)
+
+    def test_contact_permission_form_rejects_other_family_child(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        FamilyContact.objects.create(
+            family=self.family,
+            external_phone_number=number,
+            label="Grandma",
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:external_contact_permission_create"),
+            {
+                "child": self.other_child.id,
+                "external_phone_number": number.id,
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ExternalContactPermission.objects.exists())
+
+    def test_parent_can_create_conference_group_for_own_children(self):
+        sibling = Child.objects.create(family=self.family, name="Noah")
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:conference_group_create"),
+            {
+                "name": "Siblings",
+                "members": [self.child.id, sibling.id],
+                "is_active": "on",
+                "notes": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        group = ConferenceGroup.objects.get(name="Siblings")
+        self.assertEqual(group.approved_by, self.parent)
+        self.assertEqual(set(group.members.values_list("id", flat=True)), {self.child.id, sibling.id})

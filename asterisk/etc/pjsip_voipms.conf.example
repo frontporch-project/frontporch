@@ -1,0 +1,52 @@
+; FrontPorch VoIP.ms trunk configuration.
+;
+; Copy this file to /etc/asterisk/pjsip_voipms.conf on the deployed
+; Asterisk host and replace the placeholder values before reloading PJSIP.
+; Do not commit the rendered file with real credentials.
+;
+; Required values:
+; - VOIPMS_USERNAME: VoIP.ms main account or sub-account username.
+; - VOIPMS_PASSWORD: VoIP.ms SIP password.
+; - VOIPMS_SERVER: example.voip-provider.invalid
+; - VOIPMS_DID: 2025550199
+
+[voipms-auth]
+type=auth
+auth_type=userpass
+username=VOIPMS_USERNAME
+password=VOIPMS_PASSWORD
+
+[voipms-aor]
+type=aor
+contact=sip:VOIPMS_SERVER
+qualify_frequency=60
+
+[voipms-endpoint]
+type=endpoint
+transport=transport-udp
+context=frontporch-public-inbound
+disallow=all
+allow=ulaw
+aors=voipms-aor
+outbound_auth=voipms-auth
+from_domain=VOIPMS_SERVER
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+
+[voipms-identify]
+type=identify
+endpoint=voipms-endpoint
+match=VOIPMS_SERVER
+
+[voipms-registration]
+type=registration
+transport=transport-udp
+outbound_auth=voipms-auth
+server_uri=sip:VOIPMS_SERVER
+client_uri=sip:VOIPMS_USERNAME@VOIPMS_SERVER
+contact_user=VOIPMS_USERNAME
+retry_interval=60
+forbidden_retry_interval=600
+expiration=3600
