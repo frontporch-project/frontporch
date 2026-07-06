@@ -398,6 +398,52 @@ class AsteriskConfigurationBuilderTests(TestCase):
         self.assertTrue(configuration.shortcut_rules[0].is_external)
         self.assertEqual(configuration.shortcut_rules[0].normalized_number, "+12125550100")
 
+    def test_child_landline_shortcut_rule_targets_landline_endpoint(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        landline = ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+        DialShortcut.objects.create(
+            source_device=self.river_parent_device,
+            digits="2",
+            child_landline_target=landline,
+            approved_by=self.river_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(configuration.shortcut_rules[0].digits, "2")
+        self.assertFalse(configuration.shortcut_rules[0].is_external)
+        self.assertEqual(configuration.shortcut_rules[0].target_endpoint.extension, "2222")
+        self.assertEqual(
+            configuration.shortcut_rules[0].target_endpoint.dial_target,
+            "PJSIP/12125550100@voipms-endpoint",
+        )
+
+    def test_inactive_child_landline_shortcut_rule_is_omitted(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        landline = ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+        DialShortcut.objects.create(
+            source_device=self.river_parent_device,
+            digits="2",
+            child_landline_target=landline,
+            approved_by=self.river_parent,
+        )
+        landline.is_active = False
+        landline.save()
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(configuration.shortcut_rules, ())
+
     def test_same_family_devices_can_call_each_other(self):
         configuration = build_asterisk_configuration()
 

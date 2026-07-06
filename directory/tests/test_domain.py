@@ -463,6 +463,80 @@ class DirectoryDomainTests(TestCase):
 
         self.assertEqual(shortcut.parent_phone_target.phone, "+12125550100")
 
+    def test_dial_shortcut_can_target_same_family_child_landline(self):
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        landline = ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        shortcut = DialShortcut.objects.create(
+            source_device=source,
+            digits="2",
+            child_landline_target=landline,
+            approved_by=self.river_parent,
+        )
+
+        self.assertEqual(shortcut.child_landline_target, landline)
+
+    def test_dial_shortcut_rejects_unapproved_child_landline(self):
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        landline = ChildLandline.objects.create(
+            child=self.emma,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.maple_parent,
+        )
+
+        with self.assertRaises(ValidationError):
+            DialShortcut.objects.create(
+                source_device=source,
+                digits="2",
+                child_landline_target=landline,
+                approved_by=self.river_parent,
+            )
+
+    def test_dial_shortcut_rejects_inactive_child_landline(self):
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        landline = ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+            is_active=False,
+        )
+
+        with self.assertRaises(ValidationError):
+            DialShortcut.objects.create(
+                source_device=source,
+                digits="2",
+                child_landline_target=landline,
+                approved_by=self.river_parent,
+            )
+
     def test_dial_shortcut_rejects_parent_phone_from_other_family(self):
         self.maple_parent.phone = "212-555-0100"
         self.maple_parent.save()

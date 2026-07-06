@@ -694,6 +694,13 @@ class DialShortcut(TimeStampedModel):
         null=True,
         blank=True,
     )
+    child_landline_target = models.ForeignKey(
+        ChildLandline,
+        on_delete=models.CASCADE,
+        related_name="targeted_by_shortcuts",
+        null=True,
+        blank=True,
+    )
     label = models.CharField(max_length=200, blank=True)
     approved_by = models.ForeignKey(
         Parent,
@@ -718,16 +725,25 @@ class DialShortcut(TimeStampedModel):
                         models.Q(internal_target_device__isnull=False)
                         & models.Q(external_target_extension__isnull=True)
                         & models.Q(parent_phone_target__isnull=True)
+                        & models.Q(child_landline_target__isnull=True)
                     )
                     | (
                         models.Q(internal_target_device__isnull=True)
                         & models.Q(external_target_extension__isnull=False)
                         & models.Q(parent_phone_target__isnull=True)
+                        & models.Q(child_landline_target__isnull=True)
                     )
                     | (
                         models.Q(internal_target_device__isnull=True)
                         & models.Q(external_target_extension__isnull=True)
                         & models.Q(parent_phone_target__isnull=False)
+                        & models.Q(child_landline_target__isnull=True)
+                    )
+                    | (
+                        models.Q(internal_target_device__isnull=True)
+                        & models.Q(external_target_extension__isnull=True)
+                        & models.Q(parent_phone_target__isnull=True)
+                        & models.Q(child_landline_target__isnull=False)
                     )
                 ),
                 name="dial_shortcut_has_exactly_one_target",
@@ -748,6 +764,7 @@ class DialShortcut(TimeStampedModel):
                 self.internal_target_device,
                 self.external_target_extension,
                 self.parent_phone_target,
+                self.child_landline_target,
             )
         )
         if target_count != 1:
@@ -780,6 +797,13 @@ class DialShortcut(TimeStampedModel):
                 errors[
                     "parent_phone_target"
                 ] = "Source device is not allowed to call this parent phone."
+            if self.child_landline_target_id and not _device_may_call_child_landline(
+                self.source_device,
+                self.child_landline_target,
+            ):
+                errors[
+                    "child_landline_target"
+                ] = "Source device is not allowed to call this child landline."
 
         if errors:
             raise ValidationError(errors)
@@ -847,6 +871,31 @@ def _device_may_call_parent_phone(source, parent):
         source.assigned_child_id
         and parent.family_id == source.owning_family.id
         and parent.phone
+    )
+
+
+def _device_may_call_child_landline(source, landline):
+    if not landline.is_active:
+        return False
+
+    source_family_id = source.owning_family.id
+    target_family_id = landline.child.family_id
+
+    if source_family_id == target_family_id:
+        return True
+
+    if source.assigned_child_id:
+        return _child_has_family_approval(
+            source.assigned_child_id,
+            target_family_id,
+        ) and _child_has_family_approval(
+            landline.child_id,
+            source_family_id,
+        )
+
+    return _child_has_family_approval(
+        landline.child_id,
+        source_family_id,
     )
 
 

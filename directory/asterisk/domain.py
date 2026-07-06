@@ -119,7 +119,7 @@ class InboundLandlineCallerRule:
 class DialShortcutRule:
     source_endpoint: SipEndpoint
     digits: str
-    target_endpoint: SipEndpoint | None = None
+    target_endpoint: SipEndpoint | LandlineChildEndpoint | None = None
     external_number_extension_id: int | None = None
     normalized_number: str = ""
 

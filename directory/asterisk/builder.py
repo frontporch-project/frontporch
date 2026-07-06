@@ -82,6 +82,9 @@ def build_asterisk_configuration():
     landline_numbers = {
         landline.normalized_number for landline in landline_endpoints
     }
+    landline_endpoints_by_id = {
+        endpoint.child_landline_id: endpoint for endpoint in landline_endpoints
+    }
     routable_endpoints = endpoints + landline_endpoints
     routable_endpoints_by_child_id = {}
     for endpoint in routable_endpoints:
@@ -254,6 +257,7 @@ def build_asterisk_configuration():
             "external_target_extension",
             "external_target_extension__external_phone_number",
             "parent_phone_target",
+            "child_landline_target",
         )
         .order_by("source_device_id", "digits", "id")
     ):
@@ -291,6 +295,17 @@ def build_asterisk_configuration():
                     source_endpoint=source,
                     digits=shortcut.digits,
                     normalized_number=shortcut.parent_phone_target.phone,
+                )
+            )
+        elif shortcut.child_landline_target_id:
+            target = landline_endpoints_by_id.get(shortcut.child_landline_target_id)
+            if not target:
+                continue
+            shortcut_rules.append(
+                DialShortcutRule(
+                    source_endpoint=source,
+                    digits=shortcut.digits,
+                    target_endpoint=target,
                 )
             )
 
