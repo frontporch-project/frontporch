@@ -51,6 +51,14 @@ class Parent(TimeStampedModel):
     def __str__(self):
         return f"{self.display_name} ({self.family})"
 
+    def clean(self):
+        if self.phone:
+            self.phone = ExternalPhoneNumber.normalize(self.phone)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class Child(TimeStampedModel):
     family = models.ForeignKey(Family, on_delete=models.CASCADE, related_name="children")
@@ -555,6 +563,13 @@ class DialShortcut(TimeStampedModel):
         null=True,
         blank=True,
     )
+    parent_phone_target = models.ForeignKey(
+        Parent,
+        on_delete=models.CASCADE,
+        related_name="phone_targeted_by_shortcuts",
+        null=True,
+        blank=True,
+    )
     label = models.CharField(max_length=200, blank=True)
     approved_by = models.ForeignKey(
         Parent,
@@ -578,10 +593,17 @@ class DialShortcut(TimeStampedModel):
                     (
                         models.Q(internal_target_device__isnull=False)
                         & models.Q(external_target_extension__isnull=True)
+                        & models.Q(parent_phone_target__isnull=True)
                     )
                     | (
                         models.Q(internal_target_device__isnull=True)
                         & models.Q(external_target_extension__isnull=False)
+                        & models.Q(parent_phone_target__isnull=True)
+                    )
+                    | (
+                        models.Q(internal_target_device__isnull=True)
+                        & models.Q(external_target_extension__isnull=True)
+                        & models.Q(parent_phone_target__isnull=False)
                     )
                 ),
                 name="dial_shortcut_has_exactly_one_target",
@@ -598,7 +620,11 @@ class DialShortcut(TimeStampedModel):
 
         target_count = sum(
             target is not None
-            for target in (self.internal_target_device, self.external_target_extension)
+            for target in (
+                self.internal_target_device,
+                self.external_target_extension,
+                self.parent_phone_target,
+            )
         )
         if target_count != 1:
             errors["internal_target_device"] = "Shortcut must have exactly one target."
@@ -623,6 +649,13 @@ class DialShortcut(TimeStampedModel):
                 errors[
                     "external_target_extension"
                 ] = "Source device is not allowed to call this external number."
+            if self.parent_phone_target_id and not _device_may_call_parent_phone(
+                self.source_device,
+                self.parent_phone_target,
+            ):
+                errors[
+                    "parent_phone_target"
+                ] = "Source device is not allowed to call this parent phone."
 
         if errors:
             raise ValidationError(errors)
@@ -683,6 +716,14 @@ def _device_may_call_external(source, external_extension):
         external_phone_number=external_extension.external_phone_number,
         approved_by__isnull=False,
     ).exists()
+
+
+def _device_may_call_parent_phone(source, parent):
+    return bool(
+        source.assigned_child_id
+        and parent.family_id == source.owning_family.id
+        and parent.phone
+    )
 
 
 class ConferenceGroup(TimeStampedModel):

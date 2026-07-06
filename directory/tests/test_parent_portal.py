@@ -60,6 +60,24 @@ class ParentPortalTests(TestCase):
         parent = user.frontporch_parent
         self.assertEqual(parent.family.name, "Oak House")
         self.assertEqual(parent.display_name, "Taylor")
+        self.assertEqual(parent.phone, "+12125550100")
+
+    def test_registration_rejects_invalid_parent_phone(self):
+        response = self.client.post(
+            reverse("directory:register"),
+            {
+                "username": "new-parent",
+                "email": "parent@example.com",
+                "password1": "strong-test-pass-123",
+                "password2": "strong-test-pass-123",
+                "family_name": "Oak House",
+                "display_name": "Taylor",
+                "phone": "not a number",
+            },
+        )
+
+        self.assertContains(response, "Enter a valid phone number.", status_code=200)
+        self.assertFalse(User.objects.filter(username="new-parent").exists())
 
     def test_dashboard_only_lists_authenticated_parent_family_children(self):
         self.login()

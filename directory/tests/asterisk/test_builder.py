@@ -338,6 +338,22 @@ class AsteriskConfigurationBuilderTests(TestCase):
         self.assertTrue(configuration.shortcut_rules[0].is_external)
         self.assertEqual(configuration.shortcut_rules[0].normalized_number, "+12125550100")
 
+    def test_parent_phone_shortcut_rule_targets_parent_phone(self):
+        self.river_parent.phone = "212-555-0100"
+        self.river_parent.save()
+        DialShortcut.objects.create(
+            source_device=self.alex_device,
+            digits="2",
+            parent_phone_target=self.river_parent,
+            approved_by=self.river_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(configuration.shortcut_rules[0].digits, "2")
+        self.assertTrue(configuration.shortcut_rules[0].is_external)
+        self.assertEqual(configuration.shortcut_rules[0].normalized_number, "+12125550100")
+
     def test_same_family_devices_can_call_each_other(self):
         configuration = build_asterisk_configuration()
 

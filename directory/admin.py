@@ -204,6 +204,8 @@ class DialShortcutAdmin(admin.ModelAdmin):
         "internal_target_device__sip_extension",
         "external_target_extension__dial_extension",
         "external_target_extension__external_phone_number__normalized_number",
+        "parent_phone_target__display_name",
+        "parent_phone_target__phone",
         "approved_by__display_name",
         "notes",
     )
@@ -211,7 +213,11 @@ class DialShortcutAdmin(admin.ModelAdmin):
 
     @admin.display(description="Target")
     def target_display(self, obj):
-        return obj.internal_target_device or obj.external_target_extension
+        return (
+            obj.internal_target_device
+            or obj.external_target_extension
+            or obj.parent_phone_target
+        )
 
 
 @admin.register(ConferenceGroup)

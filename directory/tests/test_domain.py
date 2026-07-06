@@ -40,6 +40,23 @@ class DirectoryDomainTests(TestCase):
         with self.assertRaises(ValidationError):
             ExternalPhoneNumber.objects.create(normalized_number="not a number")
 
+    def test_parent_phone_number_normalizes_to_e164(self):
+        parent = Parent.objects.create(
+            family=self.family_a,
+            display_name="Sofia",
+            phone="(212) 555-0100",
+        )
+
+        self.assertEqual(parent.phone, "+12125550100")
+
+    def test_parent_phone_number_rejects_invalid_value(self):
+        with self.assertRaises(ValidationError):
+            Parent.objects.create(
+                family=self.family_a,
+                display_name="Sofia",
+                phone="not a number",
+            )
+
     def test_external_phone_number_manager_deduplicates_normalized_numbers(self):
         first, first_created = ExternalPhoneNumber.objects.get_or_create_normalized(
             "+1 212 555 0100"
@@ -325,6 +342,62 @@ class DirectoryDomainTests(TestCase):
         )
 
         self.assertEqual(shortcut.digits, "2")
+
+    def test_dial_shortcut_can_target_same_family_parent_phone(self):
+        self.river_parent.phone = "212-555-0100"
+        self.river_parent.save()
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+
+        shortcut = DialShortcut.objects.create(
+            source_device=source,
+            digits="2",
+            parent_phone_target=self.river_parent,
+            approved_by=self.river_parent,
+        )
+
+        self.assertEqual(shortcut.parent_phone_target.phone, "+12125550100")
+
+    def test_dial_shortcut_rejects_parent_phone_from_other_family(self):
+        self.maple_parent.phone = "212-555-0100"
+        self.maple_parent.save()
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+
+        with self.assertRaises(ValidationError):
+            DialShortcut.objects.create(
+                source_device=source,
+                digits="2",
+                parent_phone_target=self.maple_parent,
+                approved_by=self.river_parent,
+            )
+
+    def test_dial_shortcut_rejects_parent_without_phone(self):
+        source = Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="101",
+            sip_username="alex-101",
+            sip_secret="secret-a",
+        )
+
+        with self.assertRaises(ValidationError):
+            DialShortcut.objects.create(
+                source_device=source,
+                digits="2",
+                parent_phone_target=self.river_parent,
+                approved_by=self.river_parent,
+            )
 
     def test_child_family_relationship_requires_both_approvals_to_be_active(self):
         relationship = AllowedChildFamilyRelationship.objects.create(

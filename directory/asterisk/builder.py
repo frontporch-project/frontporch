@@ -188,6 +188,7 @@ def build_asterisk_configuration():
             "internal_target_device",
             "external_target_extension",
             "external_target_extension__external_phone_number",
+            "parent_phone_target",
         )
         .order_by("source_device_id", "digits", "id")
     ):
@@ -217,6 +218,14 @@ def build_asterisk_configuration():
                     normalized_number=(
                         shortcut.external_target_extension.external_phone_number.normalized_number
                     ),
+                )
+            )
+        elif shortcut.parent_phone_target_id and shortcut.parent_phone_target.phone:
+            shortcut_rules.append(
+                DialShortcutRule(
+                    source_endpoint=source,
+                    digits=shortcut.digits,
+                    normalized_number=shortcut.parent_phone_target.phone,
                 )
             )
 

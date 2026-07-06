@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import (
@@ -31,6 +32,15 @@ class ParentRegistrationForm(UserCreationForm):
         if Family.objects.filter(name__iexact=family_name).exists():
             raise forms.ValidationError("A family with this name already exists.")
         return family_name
+
+    def clean_phone(self):
+        phone = self.cleaned_data["phone"]
+        if not phone:
+            return phone
+        try:
+            return ExternalPhoneNumber.normalize(phone)
+        except ValidationError as exc:
+            raise forms.ValidationError("Enter a valid phone number.") from exc
 
     @transaction.atomic
     def save(self, commit=True):

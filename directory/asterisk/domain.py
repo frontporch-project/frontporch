@@ -94,7 +94,7 @@ class DialShortcutRule:
 
     @property
     def is_external(self):
-        return self.external_number_extension_id is not None
+        return bool(self.normalized_number)
 
     @property
     def outbound_number(self):
