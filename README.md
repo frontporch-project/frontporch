@@ -208,6 +208,10 @@ uv run python manage.py test
 
 Current tests cover domain behavior, permission rules, family-private contact labels, external number normalization, child blackout periods, one-digit shortcuts, conference permission behavior, generated Asterisk configuration, VoIP.ms-style example config, and default-deny routing behavior.
 
+## License
+
+FrontPorch is licensed under the [Apache License 2.0](LICENSE).
+
 ## Getting Oriented
 
 Read these files before larger changes:
