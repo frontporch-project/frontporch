@@ -7,6 +7,7 @@ from directory.models import (
     AllowedChildFamilyRelationship,
     Child,
     ChildBlackoutPeriod,
+    ChildLandline,
     Device,
     DialShortcut,
     ExternalContactPermission,
@@ -111,12 +112,55 @@ class AsteriskConfigurationBuilderTests(TestCase):
         self.assertEqual(endpoints_by_extension["201"].family_id, self.river.id)
         self.assertEqual(endpoints_by_extension["301"].family_id, self.river.id)
 
+    def test_active_child_landlines_become_non_sip_routable_endpoints(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertNotIn(
+            "2222",
+            {endpoint.extension for endpoint in configuration.endpoints},
+        )
+        self.assertEqual(
+            [
+                (
+                    endpoint.child_id,
+                    endpoint.extension,
+                    endpoint.normalized_number,
+                    endpoint.dial_target,
+                )
+                for endpoint in configuration.landline_endpoints
+            ],
+            [(self.alex.id, "2222", "+12125550100", "PJSIP/12125550100@voipms-endpoint")],
+        )
+
     def test_inactive_devices_do_not_appear(self):
         configuration = build_asterisk_configuration()
 
         device_ids = [endpoint.device_id for endpoint in configuration.endpoints]
 
         self.assertNotIn(self.inactive_device.id, device_ids)
+
+    def test_inactive_child_landlines_do_not_appear(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+            is_active=False,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(configuration.landline_endpoints, ())
+        self.assertDialplanOmits(configuration, "201", "2222")
 
     def test_active_public_phone_numbers_become_inbound_numbers(self):
         PublicPhoneNumber.objects.filter(normalized_number="+12025550199").update(
@@ -362,6 +406,20 @@ class AsteriskConfigurationBuilderTests(TestCase):
         self.assertDialplanContains(configuration, "201", "101")
         self.assertDialplanContains(configuration, "301", "201")
 
+    def test_same_family_devices_can_call_child_landline(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertDialplanContains(configuration, "201", "2222")
+        self.assertDialplanContains(configuration, "301", "2222")
+
     def test_child_blackout_periods_are_attached_to_child_endpoints(self):
         ChildBlackoutPeriod.objects.create(
             child=self.alex,
@@ -443,6 +501,101 @@ class AsteriskConfigurationBuilderTests(TestCase):
 
         self.assertDialplanContains(configuration, "101", "102")
         self.assertDialplanContains(configuration, "102", "101")
+
+    def test_cross_family_child_landline_requires_existing_relationship_approvals(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.luca,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.maple_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertDialplanOmits(configuration, "101", "2222")
+        self.assertDialplanOmits(configuration, "201", "2222")
+
+        self.approve_child_for_family(self.luca, self.river)
+        configuration = build_asterisk_configuration()
+
+        self.assertDialplanOmits(configuration, "101", "2222")
+        self.assertDialplanContains(configuration, "201", "2222")
+
+        self.approve_child_for_family(self.alex, self.maple)
+        configuration = build_asterisk_configuration()
+
+        self.assertDialplanContains(configuration, "101", "2222")
+
+    def test_landline_child_caller_gets_restricted_inbound_targets(self):
+        public_number = PublicPhoneNumber.objects.get(normalized_number="+12025550199")
+        public_number.is_active = True
+        public_number.save()
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.luca,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.maple_parent,
+        )
+        self.approve_child_for_family(self.luca, self.river)
+        self.approve_child_for_family(self.alex, self.maple)
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_landline_caller_rules
+                if rule.public_phone_number_id == public_number.id
+            },
+            {
+                (public_number.id, "+12125550100", "101"),
+                (public_number.id, "+12125550100", "102"),
+                (public_number.id, "+12125550100", "201"),
+                (public_number.id, "+12125550100", "202"),
+                (public_number.id, "+12125550100", "301"),
+                (public_number.id, "+12125550100", "302"),
+            },
+        )
+
+    def test_landline_child_caller_number_is_not_generic_external_caller(self):
+        public_number = PublicPhoneNumber.objects.get(normalized_number="+12025550199")
+        public_number.is_active = True
+        public_number.save()
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+        ExternalContactPermission.objects.create(
+            child=self.emma,
+            external_phone_number=number,
+            approved_by=self.maple_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertNotIn(
+            "+12125550100",
+            {
+                rule.caller_normalized_number
+                for rule in configuration.inbound_external_caller_rules
+            },
+        )
+        self.assertIn(
+            "+12125550100",
+            {
+                rule.caller_normalized_number
+                for rule in configuration.inbound_landline_caller_rules
+            },
+        )
 
     def test_cross_family_parent_or_family_devices_cannot_call_each_other(self):
         configuration = build_asterisk_configuration()

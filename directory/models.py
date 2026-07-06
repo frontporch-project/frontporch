@@ -241,6 +241,17 @@ class Device(TimeStampedModel):
             raise ValidationError(
                 {"sip_extension": "This extension is already assigned to an external number."}
             )
+        if (
+            self.sip_extension
+            and "ChildLandline" in globals()
+            and ChildLandline.objects.filter(
+                dial_extension=self.sip_extension,
+                is_active=True,
+            ).exists()
+        ):
+            raise ValidationError(
+                {"sip_extension": "This extension is already assigned to a child landline."}
+            )
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -353,6 +364,16 @@ class ExternalNumberExtension(TimeStampedModel):
             elif Device.objects.filter(sip_extension=self.dial_extension).exists():
                 errors["dial_extension"] = "This extension is already assigned to a device."
             elif (
+                "ChildLandline" in globals()
+                and ChildLandline.objects.filter(
+                    dial_extension=self.dial_extension,
+                    is_active=True,
+                ).exists()
+            ):
+                errors[
+                    "dial_extension"
+                ] = "This extension is already assigned to a child landline."
+            elif (
                 ExternalNumberExtension.objects.filter(
                     dial_extension=self.dial_extension
                 )
@@ -385,8 +406,111 @@ class ExternalNumberExtension(TimeStampedModel):
                 continue
             if cls.objects.filter(dial_extension=candidate).exists():
                 continue
+            if (
+                "ChildLandline" in globals()
+                and ChildLandline.objects.filter(
+                    dial_extension=candidate,
+                    is_active=True,
+                ).exists()
+            ):
+                continue
             return candidate
         raise ValidationError("Could not assign an unused external number extension.")
+
+
+class ChildLandline(TimeStampedModel):
+    child = models.ForeignKey(
+        Child,
+        on_delete=models.CASCADE,
+        related_name="landlines",
+    )
+    external_phone_number = models.ForeignKey(
+        ExternalPhoneNumber,
+        on_delete=models.PROTECT,
+        related_name="child_landlines",
+    )
+    dial_extension = models.CharField(max_length=4, unique=True, blank=True)
+    approved_by = models.ForeignKey(
+        Parent,
+        on_delete=models.PROTECT,
+        related_name="approved_child_landlines",
+    )
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["child__family__name", "child__name", "dial_extension"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["child"],
+                condition=models.Q(is_active=True),
+                name="unique_active_landline_per_child",
+            ),
+            models.UniqueConstraint(
+                fields=["external_phone_number"],
+                condition=models.Q(is_active=True),
+                name="unique_active_child_landline_number",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.child} landline at {self.dial_extension}"
+
+    def clean(self):
+        errors = {}
+        if (
+            self.approved_by_id
+            and self.child_id
+            and self.approved_by.family_id != self.child.family_id
+        ):
+            errors["approved_by"] = "Approval must come from the child's family."
+        if self.dial_extension:
+            if not self.dial_extension.isdigit() or len(self.dial_extension) != 4:
+                errors["dial_extension"] = "Child landline extension must be four digits."
+            elif ExternalNumberExtension._extension_is_reserved(self.dial_extension):
+                errors["dial_extension"] = "This extension is reserved."
+            elif Device.objects.filter(sip_extension=self.dial_extension).exists():
+                errors["dial_extension"] = "This extension is already assigned to a device."
+            elif ExternalNumberExtension.objects.filter(
+                dial_extension=self.dial_extension
+            ).exists():
+                errors[
+                    "dial_extension"
+                ] = "This extension is already assigned to an external number."
+            elif (
+                ChildLandline.objects.filter(
+                    dial_extension=self.dial_extension,
+                    is_active=True,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                errors[
+                    "dial_extension"
+                ] = "This extension is already assigned to a child landline."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.dial_extension:
+            self.dial_extension = self._assign_extension()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _assign_extension(cls):
+        for _ in range(100):
+            candidate = _random_four_digit_extension()
+            if ExternalNumberExtension._extension_is_reserved(candidate):
+                continue
+            if Device.objects.filter(sip_extension=candidate).exists():
+                continue
+            if ExternalNumberExtension.objects.filter(dial_extension=candidate).exists():
+                continue
+            if cls.objects.filter(dial_extension=candidate, is_active=True).exists():
+                continue
+            return candidate
+        raise ValidationError("Could not assign an unused child landline extension.")
 
 
 class FamilyContact(TimeStampedModel):

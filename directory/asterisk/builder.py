@@ -5,12 +5,15 @@ from .domain import (
     DialShortcutRule,
     ExternalDialplanRule,
     InboundExternalCallerRule,
+    InboundLandlineCallerRule,
+    LandlineChildEndpoint,
     PublicInboundNumber,
     SipEndpoint,
 )
 from directory.models import (
     AllowedChildFamilyRelationship,
     ChildBlackoutPeriod,
+    ChildLandline,
     Device,
     DialShortcut,
     ExternalContactPermission,
@@ -55,10 +58,35 @@ def build_asterisk_configuration():
         .order_by("id")
     )
     endpoints_by_device_id = {endpoint.device_id: endpoint for endpoint in endpoints}
-    endpoints_by_child_id = {}
+    sip_endpoints_by_child_id = {}
     for endpoint in endpoints:
         if endpoint.child_id:
-            endpoints_by_child_id.setdefault(endpoint.child_id, []).append(endpoint)
+            sip_endpoints_by_child_id.setdefault(endpoint.child_id, []).append(endpoint)
+
+    landline_endpoints = tuple(
+        LandlineChildEndpoint(
+            child_landline_id=landline.id,
+            owner_type="child",
+            owner_id=landline.child_id,
+            owner_display_name=str(landline.child),
+            family_id=landline.child.family_id,
+            extension=landline.dial_extension,
+            normalized_number=landline.external_phone_number.normalized_number,
+            child_id=landline.child_id,
+            blackout_windows=tuple(blackout_windows_by_child_id.get(landline.child_id, ())),
+        )
+        for landline in ChildLandline.objects.filter(is_active=True)
+        .select_related("child", "child__family", "external_phone_number")
+        .order_by("id")
+    )
+    landline_numbers = {
+        landline.normalized_number for landline in landline_endpoints
+    }
+    routable_endpoints = endpoints + landline_endpoints
+    routable_endpoints_by_child_id = {}
+    for endpoint in routable_endpoints:
+        if endpoint.child_id:
+            routable_endpoints_by_child_id.setdefault(endpoint.child_id, []).append(endpoint)
 
     approved_child_family_pairs = set(
         AllowedChildFamilyRelationship.objects.filter(
@@ -69,8 +97,8 @@ def build_asterisk_configuration():
 
     rules = []
     for source in endpoints:
-        for target in endpoints:
-            if source.device_id == target.device_id:
+        for target in routable_endpoints:
+            if source == target:
                 continue
             if _endpoints_may_call(source, target, approved_child_family_pairs):
                 rules.append(DialplanRule(source_endpoint=source, target_endpoint=target))
@@ -110,7 +138,7 @@ def build_asterisk_configuration():
         .select_related("child", "external_phone_number")
         .order_by("child_id", "external_phone_number__normalized_number", "id")
     ):
-        sources = endpoints_by_child_id.get(permission.child_id, ())
+        sources = sip_endpoints_by_child_id.get(permission.child_id, ())
         extension = external_extensions_by_number_id.get(
             permission.external_phone_number_id
         )
@@ -137,7 +165,9 @@ def build_asterisk_configuration():
             "id",
         )
     ):
-        targets = endpoints_by_child_id.get(permission.child_id, ())
+        if permission.external_phone_number.normalized_number in landline_numbers:
+            continue
+        targets = routable_endpoints_by_child_id.get(permission.child_id, ())
         public_numbers = tuple(
             public_inbound_numbers_by_family_id.get(
                 permission.child.family_id,
@@ -164,7 +194,7 @@ def build_asterisk_configuration():
             (
                 rule.public_phone_number_id,
                 rule.caller_normalized_number,
-                rule.target_endpoint.device_id,
+                _endpoint_sort_identity(rule.target_endpoint),
             )
         ] = rule
 
@@ -175,7 +205,42 @@ def build_asterisk_configuration():
                 rule.public_phone_number_id,
                 rule.caller_normalized_number,
                 rule.target_endpoint.extension,
-                rule.target_endpoint.device_id,
+                _endpoint_sort_identity(rule.target_endpoint),
+            ),
+        )
+    )
+
+    inbound_landline_rule_candidates = []
+    for caller in landline_endpoints:
+        public_numbers = tuple(
+            public_inbound_numbers_by_family_id.get(
+                caller.family_id,
+                (),
+            )
+        ) + tuple(shared_public_inbound_numbers)
+        if not public_numbers:
+            continue
+        for public_number in public_numbers:
+            for target in routable_endpoints:
+                if caller == target:
+                    continue
+                if _endpoints_may_call(caller, target, approved_child_family_pairs):
+                    inbound_landline_rule_candidates.append(
+                        InboundLandlineCallerRule(
+                            public_phone_number_id=public_number.public_phone_number_id,
+                            caller_endpoint=caller,
+                            target_endpoint=target,
+                        )
+                    )
+    inbound_landline_caller_rules = tuple(
+        sorted(
+            inbound_landline_rule_candidates,
+            key=lambda rule: (
+                rule.public_phone_number_id,
+                rule.caller_endpoint.extension,
+                rule.target_endpoint.extension,
+                getattr(rule.target_endpoint, "device_id", 0),
+                getattr(rule.target_endpoint, "child_landline_id", 0),
             ),
         )
     )
@@ -231,9 +296,11 @@ def build_asterisk_configuration():
 
     return AsteriskConfiguration(
         endpoints=endpoints,
+        landline_endpoints=landline_endpoints,
         public_inbound_numbers=public_inbound_numbers,
         external_dialplan_rules=tuple(external_rules),
         inbound_external_caller_rules=inbound_external_caller_rules,
+        inbound_landline_caller_rules=inbound_landline_caller_rules,
         shortcut_rules=tuple(shortcut_rules),
         dialplan_rules=tuple(
             sorted(
@@ -241,7 +308,7 @@ def build_asterisk_configuration():
                 key=lambda rule: (
                     rule.source_endpoint.device_id,
                     rule.target_endpoint.extension,
-                    rule.target_endpoint.device_id,
+                    _endpoint_sort_identity(rule.target_endpoint),
                 ),
             )
         ),
@@ -268,3 +335,9 @@ def _endpoints_may_call(source, target, approved_child_family_pairs):
         return (target.child_id, source.family_id) in approved_child_family_pairs
 
     return False
+
+
+def _endpoint_sort_identity(endpoint):
+    if hasattr(endpoint, "device_id"):
+        return ("sip", endpoint.device_id)
+    return ("landline", endpoint.child_landline_id)

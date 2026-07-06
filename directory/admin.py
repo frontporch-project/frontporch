@@ -4,6 +4,7 @@ from .models import (
     AllowedChildFamilyRelationship,
     Child,
     ChildBlackoutPeriod,
+    ChildLandline,
     ConferenceGroup,
     Device,
     DialShortcut,
@@ -109,6 +110,27 @@ class ExternalNumberExtensionAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("dial_extension", "external_phone_number__normalized_number", "notes")
     ordering = ("dial_extension",)
+
+
+@admin.register(ChildLandline)
+class ChildLandlineAdmin(admin.ModelAdmin):
+    list_display = (
+        "child",
+        "external_phone_number",
+        "dial_extension",
+        "approved_by",
+        "is_active",
+    )
+    list_filter = ("is_active", "child__family")
+    search_fields = (
+        "child__name",
+        "child__family__name",
+        "external_phone_number__normalized_number",
+        "dial_extension",
+        "approved_by__display_name",
+        "notes",
+    )
+    ordering = ("child__family__name", "child__name", "dial_extension")
 
 
 @admin.register(PublicPhoneNumber)

@@ -7,6 +7,7 @@ from directory.models import (
     AllowedChildFamilyRelationship,
     Child,
     ChildBlackoutPeriod,
+    ChildLandline,
     ConferenceGroup,
     Device,
     DialShortcut,
@@ -142,6 +143,105 @@ class DirectoryDomainTests(TestCase):
                 sip_extension="2222",
                 sip_username="alex-2222",
                 sip_secret="secret-a",
+            )
+
+    def test_child_landline_assigns_unused_four_digit_extension(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("(212) 555-0100")
+
+        landline = ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            approved_by=self.river_parent,
+        )
+
+        self.assertEqual(number.normalized_number, "+12125550100")
+        self.assertEqual(len(landline.dial_extension), 4)
+        self.assertTrue(landline.dial_extension.isdigit())
+
+    def test_child_landline_requires_child_family_approval(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+
+        with self.assertRaises(ValidationError):
+            ChildLandline.objects.create(
+                child=self.alex,
+                external_phone_number=number,
+                approved_by=self.maple_parent,
+            )
+
+    def test_child_landline_rejects_device_extension_conflict(self):
+        Device.objects.create(
+            assigned_child=self.alex,
+            friendly_name="Alex bedroom phone",
+            sip_extension="2222",
+            sip_username="alex-2222",
+            sip_secret="secret-a",
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+
+        with self.assertRaises(ValidationError):
+            ChildLandline.objects.create(
+                child=self.alex,
+                external_phone_number=number,
+                dial_extension="2222",
+                approved_by=self.river_parent,
+            )
+
+    def test_child_landline_rejects_external_number_extension_conflict(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        other_number, _ = ExternalPhoneNumber.objects.get_or_create_normalized(
+            "+1 646 555 0100"
+        )
+        ExternalNumberExtension.objects.create(
+            external_phone_number=other_number,
+            dial_extension="2222",
+        )
+
+        with self.assertRaises(ValidationError):
+            ChildLandline.objects.create(
+                child=self.alex,
+                external_phone_number=number,
+                dial_extension="2222",
+                approved_by=self.river_parent,
+            )
+
+    def test_device_rejects_child_landline_extension_conflict(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        with self.assertRaises(ValidationError):
+            Device.objects.create(
+                assigned_child=self.emma,
+                friendly_name="Emma bedroom phone",
+                sip_extension="2222",
+                sip_username="emma-2222",
+                sip_secret="secret-e",
+            )
+
+    def test_child_landline_rejects_duplicate_active_landline_for_child(self):
+        first_number, _ = ExternalPhoneNumber.objects.get_or_create_normalized(
+            "+1 212 555 0100"
+        )
+        second_number, _ = ExternalPhoneNumber.objects.get_or_create_normalized(
+            "+1 646 555 0100"
+        )
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=first_number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        with self.assertRaises(ValidationError):
+            ChildLandline.objects.create(
+                child=self.alex,
+                external_phone_number=second_number,
+                dial_extension="3333",
+                approved_by=self.river_parent,
             )
 
     def test_device_can_belong_to_child_parent_or_family(self):

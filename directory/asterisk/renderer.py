@@ -114,7 +114,7 @@ class AsteriskConfigRenderer:
         dial_target=None,
     ):
         if dial_target is None:
-            dial_target = f"PJSIP/{target_endpoint.endpoint_name}"
+            dial_target = target_endpoint.dial_target
 
         blackout_checks = self._call_blackout_checks(source_endpoint, target_endpoint)
         applications = blackout_checks + [
@@ -177,6 +177,12 @@ class AsteriskConfigRenderer:
                 rule.public_phone_number_id,
                 [],
             ).append(rule)
+        landline_rules_by_public_number_id = {}
+        for rule in configuration.inbound_landline_caller_rules:
+            landline_rules_by_public_number_id.setdefault(
+                rule.public_phone_number_id,
+                [],
+            ).append(rule)
 
         lines = [f"[{inbound_context_name}]"]
         restricted_contexts = []
@@ -189,6 +195,15 @@ class AsteriskConfigRenderer:
                 (),
             ):
                 caller_groups.setdefault(rule.caller_normalized_number, []).append(rule)
+            landline_caller_groups = {}
+            for rule in landline_rules_by_public_number_id.get(
+                public_number.public_phone_number_id,
+                (),
+            ):
+                landline_caller_groups.setdefault(
+                    rule.caller_normalized_number,
+                    [],
+                ).append(rule)
 
             lines.extend(
                 [
@@ -200,6 +215,31 @@ class AsteriskConfigRenderer:
             )
             approved_branches = []
             for rule_index, (caller_number, caller_rules) in enumerate(
+                sorted(landline_caller_groups.items()),
+                start=1,
+            ):
+                caller_rules = sorted(
+                    caller_rules,
+                    key=lambda rule: (
+                        rule.target_endpoint.extension,
+                        _endpoint_sort_identity(rule.target_endpoint),
+                    ),
+                )
+                context_name = (
+                    f"frontporch-landline-inbound-"
+                    f"{public_number.public_phone_number_id}-{rule_index}"
+                )
+                restricted_contexts.append((context_name, caller_number, caller_rules))
+
+                for caller_id in caller_rules[0].caller_id_variants:
+                    lines.append(
+                        (
+                            ' same => n,GotoIf($["${CALLERID(num)}" = '
+                            f'"{caller_id}"]?{context_name},s,1)'
+                        )
+                    )
+
+            for rule_index, (caller_number, caller_rules) in enumerate(
                 sorted(caller_groups.items()),
                 start=1,
             ):
@@ -207,7 +247,7 @@ class AsteriskConfigRenderer:
                     caller_rules,
                     key=lambda rule: (
                         rule.target_endpoint.extension,
-                        rule.target_endpoint.device_id,
+                        _endpoint_sort_identity(rule.target_endpoint),
                     ),
                 )
                 if len(caller_rules) == 1:
@@ -337,3 +377,9 @@ def _atomic_write(destination, content):
 
     os.chmod(temporary_path, 0o644)
     os.replace(temporary_path, destination)
+
+
+def _endpoint_sort_identity(endpoint):
+    if hasattr(endpoint, "device_id"):
+        return ("sip", endpoint.device_id)
+    return ("landline", endpoint.child_landline_id)

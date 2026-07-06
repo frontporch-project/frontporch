@@ -11,6 +11,8 @@ from directory.asterisk.domain import (
     DialShortcutRule,
     ExternalDialplanRule,
     InboundExternalCallerRule,
+    InboundLandlineCallerRule,
+    LandlineChildEndpoint,
     PublicInboundNumber,
     SipEndpoint,
 )
@@ -45,6 +47,16 @@ class AsteriskConfigRendererTests(SimpleTestCase):
             username="emma",
             secret="emma-secret",
             child_id=2,
+        )
+        self.luca_landline = LandlineChildEndpoint(
+            child_landline_id=201,
+            owner_type="child",
+            owner_id=3,
+            owner_display_name="Luca (Maple House)",
+            family_id=2,
+            extension="2222",
+            normalized_number="+16465550100",
+            child_id=3,
         )
         self.configuration = AsteriskConfiguration(
             endpoints=(self.alex_endpoint, self.emma_endpoint),
@@ -115,6 +127,19 @@ class AsteriskConfigRendererTests(SimpleTestCase):
         self.assertIn("username=alex", content)
         self.assertIn("[alex](aor-single-reg)", content)
 
+    def test_pjsip_excludes_landline_child_endpoints(self):
+        configuration = AsteriskConfiguration(
+            endpoints=(self.alex_endpoint,),
+            landline_endpoints=(self.luca_landline,),
+            dialplan_rules=(),
+        )
+
+        content = self.renderer.render_pjsip(configuration)
+
+        self.assertIn("[alex](endpoint-basic)", content)
+        self.assertNotIn("2222", content)
+        self.assertNotIn("16465550100", content)
+
     def test_extensions_allow_only_rendered_rules(self):
         content = self.renderer.render_extensions(self.configuration)
 
@@ -131,6 +156,23 @@ class AsteriskConfigRendererTests(SimpleTestCase):
         self.assertNotIn("exten => 101,1,Dial(PJSIP/alex,30)", content)
         self.assertIn("exten => _X!,1,Hangup(21)", content)
         self.assertIn("[frontporch-blackout]", content)
+
+    def test_extensions_route_sip_calls_to_landline_child_over_pstn(self):
+        configuration = AsteriskConfiguration(
+            endpoints=(self.alex_endpoint,),
+            landline_endpoints=(self.luca_landline,),
+            dialplan_rules=(
+                DialplanRule(
+                    source_endpoint=self.alex_endpoint,
+                    target_endpoint=self.luca_landline,
+                ),
+            ),
+        )
+
+        content = self.renderer.render_extensions(configuration)
+
+        self.assertIn("[frontporch-alex]", content)
+        self.assertIn("exten => 2222,1,Dial(PJSIP/16465550100@voipms-endpoint,30)", content)
 
     def test_extensions_include_public_inbound_did_test_context(self):
         content = self.renderer.render_extensions(self.configuration)
@@ -200,6 +242,80 @@ class AsteriskConfigRendererTests(SimpleTestCase):
         self.assertIn("exten => 101,1,Dial(PJSIP/alex,30)", content)
         self.assertIn("exten => 102,1,Dial(PJSIP/emma,30)", content)
         self.assertIn("exten => _X!,1,Hangup(21)", content)
+
+    def test_landline_caller_gets_restricted_extension_context(self):
+        configuration = AsteriskConfiguration(
+            endpoints=(self.alex_endpoint, self.emma_endpoint),
+            landline_endpoints=(self.luca_landline,),
+            dialplan_rules=(),
+            inbound_landline_caller_rules=(
+                InboundLandlineCallerRule(
+                    public_phone_number_id=1,
+                    caller_endpoint=self.luca_landline,
+                    target_endpoint=self.alex_endpoint,
+                ),
+                InboundLandlineCallerRule(
+                    public_phone_number_id=1,
+                    caller_endpoint=self.luca_landline,
+                    target_endpoint=self.emma_endpoint,
+                ),
+            ),
+            public_inbound_numbers=(
+                PublicInboundNumber(
+                    public_phone_number_id=1,
+                    normalized_number="+12025550199",
+                    label="Example shared FrontPorch DID",
+                ),
+            ),
+        )
+
+        content = self.renderer.render_extensions(configuration)
+
+        self.assertIn(
+            'same => n,GotoIf($["${CALLERID(num)}" = "6465550100"]?frontporch-landline-inbound-1-1,s,1)',
+            content,
+        )
+        self.assertIn("[frontporch-landline-inbound-1-1]", content)
+        self.assertIn("exten => s,1,NoOp(FrontPorch restricted inbound caller +16465550100)", content)
+        self.assertIn(" same => n,WaitExten(10)", content)
+        self.assertIn("exten => 101,1,Dial(PJSIP/alex,30)", content)
+        self.assertIn("exten => 102,1,Dial(PJSIP/emma,30)", content)
+        self.assertIn("exten => _X!,1,Hangup(21)", content)
+
+    def test_landline_caller_rules_take_precedence_over_external_contact_rules(self):
+        configuration = AsteriskConfiguration(
+            endpoints=(self.alex_endpoint, self.emma_endpoint),
+            landline_endpoints=(self.luca_landline,),
+            dialplan_rules=(),
+            inbound_landline_caller_rules=(
+                InboundLandlineCallerRule(
+                    public_phone_number_id=1,
+                    caller_endpoint=self.luca_landline,
+                    target_endpoint=self.alex_endpoint,
+                ),
+            ),
+            inbound_external_caller_rules=(
+                InboundExternalCallerRule(
+                    public_phone_number_id=1,
+                    caller_normalized_number="+16465550100",
+                    target_endpoint=self.emma_endpoint,
+                ),
+            ),
+            public_inbound_numbers=(
+                PublicInboundNumber(
+                    public_phone_number_id=1,
+                    normalized_number="+12025550199",
+                    label="Example shared FrontPorch DID",
+                ),
+            ),
+        )
+
+        content = self.renderer.render_extensions(configuration)
+
+        self.assertLess(
+            content.index("frontporch-landline-inbound-1-1,s,1"),
+            content.index("approved-12025550199-1"),
+        )
 
     def test_blackout_windows_allow_family_adults_but_block_other_calls(self):
         alex_endpoint = SipEndpoint(

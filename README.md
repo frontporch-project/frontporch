@@ -21,6 +21,7 @@ FrontPorch should default to deny.
 The current model is built around these rules:
 
 - Parents and guardians control children, devices, contacts, child-to-family approvals, approved external callers, blackout periods, and conference groups.
+- Staff can attach an existing household landline to a child as a FrontPorch extension, while parents still control reachability through child-to-family approvals.
 - Children should not discover other children or families through an open directory.
 - Children should not dial arbitrary public phone numbers.
 - Unknown inbound callers should not reach a child's phone.
@@ -166,6 +167,18 @@ VOIPMS_DID
 ```
 
 Use reserved example numbers such as `202-555-0199` in public tests and docs. Put real DIDs and caller IDs only in private deployment config or private database state.
+
+## Child-Owned Landlines
+
+FrontPorch can represent an existing household landline as a child endpoint with a normal FrontPorch extension.
+
+For now, landline setup is staff-managed in Django Admin. Staff links a child to a normalized external phone number, assigns or accepts a four-digit FrontPorch extension, and records the approving parent or guardian.
+
+FrontPorch devices call that child by dialing the child's FrontPorch extension. Asterisk routes the call through the SIP trunk to the landline number.
+
+A child using the landline calls the shared or family-assigned FrontPorch public number, then dials the known approved extension. The generated dialplan checks the landline caller ID and only accepts target extensions allowed by existing child-to-family approvals. Parents can usually make this easier by saving speed dial entries on the landline phone with pauses between the FrontPorch public number and the target extension.
+
+FrontPorch does not control calls the child places directly from that landline outside the FrontPorch dial-in flow.
 
 ## Docker Compose
 
