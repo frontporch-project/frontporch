@@ -18,6 +18,7 @@ from directory.models import (
     DialShortcut,
     ExternalContactPermission,
     ExternalNumberExtension,
+    Parent,
     PublicPhoneNumber,
 )
 
@@ -187,6 +188,35 @@ def build_asterisk_configuration():
                         caller_normalized_number=(
                             permission.external_phone_number.normalized_number
                         ),
+                        target_endpoint=target,
+                    )
+                )
+
+    for parent in (
+        Parent.objects.exclude(phone="")
+        .select_related("family")
+        .order_by("family_id", "phone", "id")
+    ):
+        targets = tuple(
+            target
+            for endpoints in routable_endpoints_by_child_id.values()
+            for target in endpoints
+            if target.family_id == parent.family_id
+        )
+        public_numbers = tuple(
+            public_inbound_numbers_by_family_id.get(
+                parent.family_id,
+                (),
+            )
+        ) + tuple(shared_public_inbound_numbers)
+        if not targets or not public_numbers:
+            continue
+        for public_number in public_numbers:
+            for target in targets:
+                inbound_rule_candidates.append(
+                    InboundExternalCallerRule(
+                        public_phone_number_id=public_number.public_phone_number_id,
+                        caller_normalized_number=parent.phone,
                         target_endpoint=target,
                     )
                 )

@@ -340,6 +340,101 @@ class AsteriskConfigurationBuilderTests(TestCase):
             },
         )
 
+    def test_parent_phone_creates_inbound_rule_for_family_public_number(self):
+        public_number = PublicPhoneNumber.objects.create(
+            normalized_number="202-555-0198",
+            assigned_family=self.river,
+        )
+        self.river_parent.phone = "212-555-0100"
+        self.river_parent.save()
+
+        configuration = build_asterisk_configuration()
+
+        self.assertIn(
+            (public_number.id, "+12125550100", "101"),
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_external_caller_rules
+            },
+        )
+
+    def test_parent_phone_creates_inbound_rule_for_shared_public_number(self):
+        public_number = PublicPhoneNumber.objects.get(normalized_number="+12025550199")
+        public_number.is_active = True
+        public_number.save()
+        self.river_parent.phone = "212-555-0100"
+        self.river_parent.save()
+
+        configuration = build_asterisk_configuration()
+
+        self.assertIn(
+            (public_number.id, "+12125550100", "101"),
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_external_caller_rules
+            },
+        )
+
+    def test_parent_phone_inbound_rule_targets_child_landline_too(self):
+        public_number = PublicPhoneNumber.objects.create(
+            normalized_number="202-555-0198",
+            assigned_family=self.river,
+        )
+        self.river_parent.phone = "212-555-0100"
+        self.river_parent.save()
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 646 555 0100")
+        ChildLandline.objects.create(
+            child=self.alex,
+            external_phone_number=number,
+            dial_extension="2222",
+            approved_by=self.river_parent,
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_external_caller_rules
+                if rule.public_phone_number_id == public_number.id
+            },
+            {
+                (public_number.id, "+12125550100", "101"),
+                (public_number.id, "+12125550100", "2222"),
+            },
+        )
+
+    def test_parent_phone_inbound_rule_omits_public_number_assigned_to_other_family(self):
+        other_family_public_number = PublicPhoneNumber.objects.create(
+            normalized_number="212-555-0100",
+            assigned_family=self.maple,
+        )
+        self.river_parent.phone = "646-555-0100"
+        self.river_parent.save()
+
+        configuration = build_asterisk_configuration()
+
+        self.assertNotIn(
+            other_family_public_number.id,
+            {
+                rule.public_phone_number_id
+                for rule in configuration.inbound_external_caller_rules
+                if rule.caller_normalized_number == "+16465550100"
+            },
+        )
+
     def test_shortcut_rules_are_scoped_to_source_device(self):
         DialShortcut.objects.create(
             source_device=self.alex_device,
