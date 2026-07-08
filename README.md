@@ -74,6 +74,10 @@ Django models
 -> optional Asterisk Manager Interface reload
 ```
 
+## Operational Checklists
+
+- [GL.iNet Opal router setup checklist](docs/operations/opal-router-checklist.md)
+
 ## Local Setup
 
 Install dependencies with `uv`:
