@@ -17,6 +17,7 @@ asterisk/spool/*
 !asterisk/spool/.empty
 
 asterisk/etc/pjsip_voipms.conf
+asterisk/etc/pjsip_network.conf
 asterisk/etc/extensions_voipms.conf
 asterisk/etc/manager.conf
 asterisk/etc/pjsip_frontporch.conf

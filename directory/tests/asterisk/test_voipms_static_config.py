@@ -23,10 +23,21 @@ class VoipMsStaticConfigTests(SimpleTestCase):
     def test_generated_device_endpoint_template_relays_media_across_nat(self):
         pjsip = (ASTERISK_ETC / "pjsip.conf").read_text(encoding="utf-8")
 
+        self.assertIn("#tryinclude pjsip_network.conf", pjsip)
         self.assertIn("direct_media=no", pjsip)
         self.assertIn("rtp_symmetric=yes", pjsip)
         self.assertIn("force_rport=yes", pjsip)
         self.assertIn("rewrite_contact=yes", pjsip)
+
+    def test_network_example_uses_placeholder_public_address(self):
+        pjsip = (ASTERISK_ETC / "pjsip_network.conf.example").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("external_media_address=PBX_PUBLIC_ADDRESS", pjsip)
+        self.assertIn("external_signaling_address=PBX_PUBLIC_ADDRESS", pjsip)
+        self.assertIn("local_net=10.4.0.0/24", pjsip)
+        self.assertIn("local_net=100.64.0.0/10", pjsip)
 
     def test_voipms_example_files_define_trunk_and_inbound_context(self):
         pjsip = (ASTERISK_ETC / "pjsip_voipms.conf.example").read_text(

@@ -1,0 +1,17 @@
+; FrontPorch deployment-local PJSIP network settings.
+;
+; Copy this file to /etc/asterisk/pjsip_network.conf on the deployed
+; Asterisk host and replace placeholder values before reloading PJSIP.
+; Do not commit the rendered file with real public addresses.
+;
+; Required values:
+; - PBX_PUBLIC_ADDRESS: public IP address or DNS name used by the SIP trunk.
+;
+; Keep private FrontPorch device networks in local_net so Asterisk does not
+; rewrite their signaling or media addresses to the public trunk address.
+
+external_media_address=PBX_PUBLIC_ADDRESS
+external_signaling_address=PBX_PUBLIC_ADDRESS
+local_net=10.4.0.0/24
+local_net=192.168.86.0/24
+local_net=100.64.0.0/10
