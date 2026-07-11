@@ -106,16 +106,17 @@ Start with only the WireGuard client IP. Add the Opal LAN subnet later only if t
 
 ## Static Route
 
-Some Opal/OpenWrt builds bring up WireGuard but do not install the route for `AllowedIPs`.
+Some Opal/OpenWrt builds bring up WireGuard but do not install the route for `AllowedIPs`. This happened on an early pilot Opal: `wg show` had a valid handshake, and `ping -I wgclient1 10.4.0.1` worked, but normal traffic still did not route to the WireGuard server.
 
 After WireGuard connects, test:
 
 ```sh
+ip route get 10.4.0.1
 ping -I wgclient1 -c 3 10.4.0.1
 ping -c 3 10.4.0.1
 ```
 
-If the first command works and the second fails, add a static route:
+If the interface-specific ping works and the normal ping fails, add a static route:
 
 ```text
 Route type: Unicast
@@ -123,6 +124,21 @@ Interface: wgclient1
 Target: 10.4.0.0
 Netmask: 255.255.255.0
 Gateway: blank
+Metric: blank or default
+MTU: blank
+```
+
+Use `Unicast` for LuCI's route type field. Do not use `blackhole`, `unreachable`, or `prohibit`; those route types intentionally drop or reject traffic.
+
+Equivalent OpenWrt UCI commands:
+
+```sh
+uci add network route
+uci set network.@route[-1].interface='wgclient1'
+uci set network.@route[-1].target='10.4.0.0'
+uci set network.@route[-1].netmask='255.255.255.0'
+uci commit network
+/etc/init.d/network reload
 ```
 
 Expected route:
