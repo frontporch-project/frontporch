@@ -2,6 +2,8 @@ services:
   asterisk:
     image: andrius/asterisk:22-cert
     network_mode: host
+    healthcheck:
+      disable: true
     volumes:
       - ${ASTERISK_ETC_DIR:?set ASTERISK_ETC_DIR}:/etc/asterisk
       - ${ASTERISK_CONF_D_DIR:?set ASTERISK_CONF_D_DIR}:/etc/asterisk/conf.d
