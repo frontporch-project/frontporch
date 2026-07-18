@@ -178,6 +178,8 @@ FrontPorch can represent an existing household landline as a child endpoint with
 
 For now, landline setup is staff-managed in Django Admin. Staff links a child to a normalized external phone number, assigns or accepts a four-digit FrontPorch extension, and records the approving parent or guardian.
 
+Grandparents and other ordinary external contacts are managed as family contacts. Adding a family contact normalizes the phone number, creates or reuses its four-digit FrontPorch extension, and allows the children in that family to communicate with that number. Optional one-digit dial shortcuts still require parent or guardian approval.
+
 FrontPorch devices call that child by dialing the child's FrontPorch extension. Asterisk routes the call through the SIP trunk to the landline number.
 
 A child using the landline calls the shared or family-assigned FrontPorch public number, then dials the known approved extension. The generated dialplan checks the landline caller ID and only accepts target extensions allowed by existing child-to-family approvals. Parents can usually make this easier by saving speed dial entries on the landline phone with pauses between the FrontPorch public number and the target extension.

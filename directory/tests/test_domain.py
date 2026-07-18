@@ -105,6 +105,24 @@ class DirectoryDomainTests(TestCase):
         self.assertEqual(sophia.external_phone_number, sophie.external_phone_number)
         self.assertEqual(number.family_contacts.count(), 2)
 
+    def test_family_contact_creates_reusable_external_extension(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+
+        contact = FamilyContact.objects.create(
+            family=self.family_a,
+            external_phone_number=number,
+            label="Grandma",
+        )
+        second_contact = FamilyContact.objects.create(
+            family=self.family_b,
+            external_phone_number=number,
+            label="Grandmother",
+        )
+
+        self.assertIsNotNone(contact.dial_extension)
+        self.assertEqual(len(contact.dial_extension.dial_extension), 4)
+        self.assertEqual(contact.dial_extension, second_contact.dial_extension)
+
     def test_external_number_extension_assigns_unused_four_digit_extension(self):
         number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
 
@@ -415,7 +433,7 @@ class DirectoryDomainTests(TestCase):
                 approved_by=self.maple_parent,
             )
 
-    def test_dial_shortcut_can_target_approved_external_number(self):
+    def test_dial_shortcut_can_target_family_contact_external_number(self):
         source = Device.objects.create(
             assigned_child=self.alex,
             friendly_name="Alex bedroom phone",
@@ -428,10 +446,10 @@ class DirectoryDomainTests(TestCase):
             external_phone_number=number,
             dial_extension="2222",
         )
-        ExternalContactPermission.objects.create(
-            child=self.alex,
+        FamilyContact.objects.create(
+            family=self.family_a,
             external_phone_number=number,
-            approved_by=self.river_parent,
+            label="Grandma",
         )
 
         shortcut = DialShortcut.objects.create(

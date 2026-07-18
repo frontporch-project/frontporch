@@ -10,6 +10,7 @@ from directory.models import (
     ChildBlackoutPeriod,
     ConferenceGroup,
     ExternalContactPermission,
+    ExternalNumberExtension,
     ExternalPhoneNumber,
     Family,
     FamilyContact,
@@ -152,9 +153,9 @@ class ParentPortalTests(TestCase):
         blackout.refresh_from_db()
         self.assertTrue(blackout.is_active)
 
-    def test_parent_can_add_family_contact_and_approve_for_child(self):
+    def test_parent_can_add_family_contact_with_dial_extension(self):
         self.login()
-        self.client.post(
+        response = self.client.post(
             reverse("directory:contact_create"),
             {
                 "label": "Grandma",
@@ -162,27 +163,57 @@ class ParentPortalTests(TestCase):
                 "notes": "",
             },
         )
-        contact = FamilyContact.objects.get(family=self.family, label="Grandma")
-
-        response = self.client.post(
-            reverse("directory:external_contact_permission_create"),
-            {
-                "child": self.child.id,
-                "external_phone_number": contact.external_phone_number.id,
-                "notes": "Sunday calls are okay.",
-            },
-        )
 
         self.assertRedirects(response, reverse("directory:dashboard"))
-        permission = ExternalContactPermission.objects.get(child=self.child)
-        self.assertTrue(permission.is_active)
-        self.assertEqual(permission.approved_by, self.parent)
+        contact = FamilyContact.objects.get(family=self.family, label="Grandma")
+        extension = ExternalNumberExtension.objects.get(
+            external_phone_number=contact.external_phone_number
+        )
+        self.assertEqual(len(extension.dial_extension), 4)
 
-        self.client.post(
-            reverse("directory:external_contact_permission_revoke", args=[permission.id])
+        response = self.client.get(reverse("directory:dashboard"))
+        self.assertContains(response, "Grandma")
+        self.assertContains(response, "+12125550100")
+        self.assertContains(response, f"Ext. {extension.dial_extension}")
+
+    def test_parent_can_remove_family_contact(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        contact = FamilyContact.objects.create(
+            family=self.family,
+            external_phone_number=number,
+            label="Grandma",
+        )
+        permission = ExternalContactPermission.objects.create(
+            child=self.child,
+            external_phone_number=number,
+            approved_by=self.parent,
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("directory:contact_delete", args=[contact.id])
+        )
+        self.assertRedirects(response, reverse("directory:dashboard"))
+        self.assertFalse(FamilyContact.objects.filter(id=contact.id).exists())
+        self.assertTrue(
+            ExternalNumberExtension.objects.filter(external_phone_number=number).exists()
         )
         permission.refresh_from_db()
         self.assertFalse(permission.is_active)
+
+    def test_parent_cannot_remove_other_family_contact(self):
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        contact = FamilyContact.objects.create(
+            family=self.other_family,
+            external_phone_number=number,
+            label="Grandma",
+        )
+        self.login()
+
+        response = self.client.post(reverse("directory:contact_delete", args=[contact.id]))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(FamilyContact.objects.filter(id=contact.id).exists())
 
     def test_parent_can_request_family_permission_by_exact_family_name(self):
         self.login()

@@ -104,12 +104,29 @@ class ExternalNumberExtensionAdmin(admin.ModelAdmin):
     list_display = (
         "dial_extension",
         "external_phone_number",
+        "family_contact_labels",
         "is_active",
         "created_at",
     )
     list_filter = ("is_active",)
-    search_fields = ("dial_extension", "external_phone_number__normalized_number", "notes")
+    search_fields = (
+        "dial_extension",
+        "external_phone_number__normalized_number",
+        "external_phone_number__family_contacts__label",
+        "external_phone_number__family_contacts__family__name",
+        "notes",
+    )
     ordering = ("dial_extension",)
+
+    @admin.display(description="Family contacts")
+    def family_contact_labels(self, obj):
+        labels = [
+            f"{contact.label} ({contact.family})"
+            for contact in obj.external_phone_number.family_contacts.select_related(
+                "family"
+            ).order_by("family__name", "label")[:5]
+        ]
+        return ", ".join(labels)
 
 
 @admin.register(ChildLandline)
@@ -155,10 +172,22 @@ class PublicPhoneNumberAdmin(admin.ModelAdmin):
 
 @admin.register(FamilyContact)
 class FamilyContactAdmin(admin.ModelAdmin):
-    list_display = ("label", "family", "external_phone_number")
+    list_display = ("label", "family", "external_phone_number", "dial_extension_display")
     list_filter = ("family",)
-    search_fields = ("label", "family__name", "external_phone_number__normalized_number")
+    search_fields = (
+        "label",
+        "family__name",
+        "external_phone_number__normalized_number",
+        "external_phone_number__dialable_extension__dial_extension",
+    )
     ordering = ("family__name", "label")
+
+    @admin.display(description="Dial extension")
+    def dial_extension_display(self, obj):
+        extension = obj.dial_extension
+        if not extension:
+            return ""
+        return extension.dial_extension
 
 
 @admin.register(AllowedChildFamilyRelationship)

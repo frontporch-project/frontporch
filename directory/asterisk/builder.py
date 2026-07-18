@@ -18,6 +18,7 @@ from directory.models import (
     DialShortcut,
     ExternalContactPermission,
     ExternalNumberExtension,
+    FamilyContact,
     Parent,
     PublicPhoneNumber,
 )
@@ -136,7 +137,34 @@ def build_asterisk_configuration():
         .order_by("dial_extension", "id")
     }
 
-    external_rules = []
+    external_rules_by_key = {}
+    family_contacts = tuple(
+        FamilyContact.objects.select_related("family", "external_phone_number").order_by(
+            "family_id",
+            "external_phone_number__normalized_number",
+            "id",
+        )
+    )
+    for contact in family_contacts:
+        extension = external_extensions_by_number_id.get(contact.external_phone_number_id)
+        if not extension:
+            continue
+        for source in endpoints:
+            if source.family_id != contact.family_id or not source.child_id:
+                continue
+            external_rules_by_key[
+                (
+                    source.device_id,
+                    extension.id,
+                    extension.external_phone_number.normalized_number,
+                )
+            ] = ExternalDialplanRule(
+                source_endpoint=source,
+                external_number_extension_id=extension.id,
+                dialed_extension=extension.dial_extension,
+                normalized_number=extension.external_phone_number.normalized_number,
+            )
+
     for permission in (
         ExternalContactPermission.objects.filter(approved_by__isnull=False)
         .select_related("child", "external_phone_number")
@@ -149,16 +177,54 @@ def build_asterisk_configuration():
         if not sources or not extension:
             continue
         for source in sources:
-            external_rules.append(
+            external_rules_by_key.setdefault(
+                (
+                    source.device_id,
+                    extension.id,
+                    extension.external_phone_number.normalized_number,
+                ),
                 ExternalDialplanRule(
                     source_endpoint=source,
                     external_number_extension_id=extension.id,
                     dialed_extension=extension.dial_extension,
                     normalized_number=extension.external_phone_number.normalized_number,
-                )
+                ),
             )
+    external_rules = tuple(
+        sorted(
+            external_rules_by_key.values(),
+            key=lambda rule: (
+                rule.source_endpoint.device_id,
+                rule.dialed_extension,
+                rule.normalized_number,
+            ),
+        )
+    )
 
     inbound_rule_candidates = []
+    for contact in family_contacts:
+        if contact.external_phone_number.normalized_number in landline_numbers:
+            continue
+        public_numbers = tuple(
+            public_inbound_numbers_by_family_id.get(contact.family_id, ())
+        ) + tuple(shared_public_inbound_numbers)
+        if not public_numbers:
+            continue
+        for endpoints_for_child in routable_endpoints_by_child_id.values():
+            for target in endpoints_for_child:
+                if target.family_id != contact.family_id:
+                    continue
+                for public_number in public_numbers:
+                    inbound_rule_candidates.append(
+                        InboundExternalCallerRule(
+                            public_phone_number_id=public_number.public_phone_number_id,
+                            caller_normalized_number=(
+                                contact.external_phone_number.normalized_number
+                            ),
+                            target_endpoint=target,
+                        )
+                    )
+
     for permission in (
         ExternalContactPermission.objects.filter(approved_by__isnull=False)
         .select_related("child", "child__family", "external_phone_number")
@@ -343,7 +409,7 @@ def build_asterisk_configuration():
         endpoints=endpoints,
         landline_endpoints=landline_endpoints,
         public_inbound_numbers=public_inbound_numbers,
-        external_dialplan_rules=tuple(external_rules),
+        external_dialplan_rules=external_rules,
         inbound_external_caller_rules=inbound_external_caller_rules,
         inbound_landline_caller_rules=inbound_landline_caller_rules,
         shortcut_rules=tuple(shortcut_rules),

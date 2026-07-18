@@ -352,7 +352,17 @@ class ExternalNumberExtension(TimeStampedModel):
         ordering = ["dial_extension"]
 
     def __str__(self):
-        return f"{self.external_phone_number} at {self.dial_extension}"
+        contact_labels = list(
+            self.external_phone_number.family_contacts.select_related("family")
+            .order_by("family__name", "label")
+            .values_list("label", "family__name")[:3]
+        )
+        label_text = ", ".join(
+            f"{label} ({family_name})" for label, family_name in contact_labels
+        )
+        if label_text:
+            return f"{self.dial_extension} -> {self.external_phone_number} [{label_text}]"
+        return f"{self.dial_extension} -> {self.external_phone_number}"
 
     def clean(self):
         errors = {}
@@ -533,7 +543,18 @@ class FamilyContact(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.label} ({self.family})"
+        return f"{self.label} ({self.external_phone_number}, {self.family})"
+
+    @property
+    def dial_extension(self):
+        return getattr(self.external_phone_number, "dialable_extension", None)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+        ExternalNumberExtension.objects.get_or_create(
+            external_phone_number=self.external_phone_number
+        )
 
 
 class AllowedChildFamilyRelationship(TimeStampedModel):
@@ -859,6 +880,11 @@ def _child_has_family_approval(child_id, target_family_id):
 def _device_may_call_external(source, external_extension):
     if not source.assigned_child_id or not external_extension.is_active:
         return False
+    if FamilyContact.objects.filter(
+        family_id=source.owning_family.id,
+        external_phone_number=external_extension.external_phone_number,
+    ).exists():
+        return True
     return ExternalContactPermission.objects.filter(
         child_id=source.assigned_child_id,
         external_phone_number=external_extension.external_phone_number,

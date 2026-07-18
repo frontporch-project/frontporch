@@ -26,6 +26,7 @@ urlpatterns = [
         name="blackout_deactivate",
     ),
     path("contacts/new/", views.contact_create, name="contact_create"),
+    path("contacts/<int:contact_id>/remove/", views.contact_delete, name="contact_delete"),
     path(
         "contact-permissions/new/",
         views.external_contact_permission_create,

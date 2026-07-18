@@ -12,6 +12,7 @@ from directory.models import (
     ExternalNumberExtension,
     ExternalPhoneNumber,
     Family,
+    FamilyContact,
     Parent,
     PublicPhoneNumber,
 )
@@ -24,6 +25,7 @@ from directory.models import (
 @receiver(post_save, sender=Device)
 @receiver(post_save, sender=ExternalPhoneNumber)
 @receiver(post_save, sender=ExternalNumberExtension)
+@receiver(post_save, sender=FamilyContact)
 @receiver(post_save, sender=PublicPhoneNumber)
 @receiver(post_save, sender=AllowedChildFamilyRelationship)
 @receiver(post_save, sender=ExternalContactPermission)
@@ -35,6 +37,7 @@ from directory.models import (
 @receiver(post_delete, sender=Device)
 @receiver(post_delete, sender=ExternalPhoneNumber)
 @receiver(post_delete, sender=ExternalNumberExtension)
+@receiver(post_delete, sender=FamilyContact)
 @receiver(post_delete, sender=PublicPhoneNumber)
 @receiver(post_delete, sender=AllowedChildFamilyRelationship)
 @receiver(post_delete, sender=ExternalContactPermission)

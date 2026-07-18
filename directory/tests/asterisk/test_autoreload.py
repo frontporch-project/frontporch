@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.db import transaction
 from django.test import TransactionTestCase, override_settings
 
-from directory.models import ExternalPhoneNumber, Family, FamilyContact
+from directory.models import ExternalNumberExtension, ExternalPhoneNumber, Family, FamilyContact
 
 
 class AsteriskAutoReloadSignalTests(TransactionTestCase):
@@ -38,10 +38,14 @@ class AsteriskAutoReloadSignalTests(TransactionTestCase):
 
     @override_settings(ASTERISK_AUTO_APPLY_CONFIG=True)
     @patch("directory.asterisk.autoreload.apply_asterisk_configuration")
-    def test_non_rendered_contact_label_change_does_not_apply_configuration(self, apply):
+    def test_family_contact_create_applies_configuration(self, apply):
         with override_settings(ASTERISK_AUTO_APPLY_CONFIG=False):
             family = Family.objects.create(name="River House")
             number = ExternalPhoneNumber.objects.create(normalized_number="+12125550100")
+            ExternalNumberExtension.objects.create(
+                external_phone_number=number,
+                dial_extension="2222",
+            )
 
         FamilyContact.objects.create(
             family=family,
@@ -49,4 +53,4 @@ class AsteriskAutoReloadSignalTests(TransactionTestCase):
             label="Grandparent",
         )
 
-        apply.assert_not_called()
+        apply.assert_called_once_with(reload=True)

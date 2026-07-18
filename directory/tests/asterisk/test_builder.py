@@ -14,6 +14,7 @@ from directory.models import (
     ExternalNumberExtension,
     ExternalPhoneNumber,
     Family,
+    FamilyContact,
     Parent,
     PublicPhoneNumber,
 )
@@ -218,6 +219,58 @@ class AsteriskConfigurationBuilderTests(TestCase):
             },
         )
 
+    def test_family_contact_creates_outbound_rules_for_family_children(self):
+        luca = Child.objects.create(family=self.river, name="Luca River")
+        luca_device = Device.objects.create(
+            assigned_child=luca,
+            friendly_name="Luca bedroom phone",
+            sip_extension="104",
+            sip_username="luca-river-104",
+            sip_secret="secret-lr",
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        contact = FamilyContact.objects.create(
+            family=self.river,
+            external_phone_number=number,
+            label="Grandma",
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertIn(
+            ("101", contact.dial_extension.dial_extension, "+12125550100"),
+            {
+                (
+                    rule.source_endpoint.extension,
+                    rule.dialed_extension,
+                    rule.normalized_number,
+                )
+                for rule in configuration.external_dialplan_rules
+            },
+        )
+        self.assertIn(
+            (luca_device.sip_extension, contact.dial_extension.dial_extension, "+12125550100"),
+            {
+                (
+                    rule.source_endpoint.extension,
+                    rule.dialed_extension,
+                    rule.normalized_number,
+                )
+                for rule in configuration.external_dialplan_rules
+            },
+        )
+        self.assertNotIn(
+            ("102", contact.dial_extension.dial_extension, "+12125550100"),
+            {
+                (
+                    rule.source_endpoint.extension,
+                    rule.dialed_extension,
+                    rule.normalized_number,
+                )
+                for rule in configuration.external_dialplan_rules
+            },
+        )
+
     def test_unapproved_external_contact_does_not_create_outbound_rule(self):
         number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
         ExternalNumberExtension.objects.create(
@@ -249,6 +302,43 @@ class AsteriskConfigurationBuilderTests(TestCase):
 
         self.assertIn(
             (public_number.id, "+12125550100", "101"),
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_external_caller_rules
+            },
+        )
+
+    def test_family_contact_creates_inbound_rule_for_family_children(self):
+        public_number = PublicPhoneNumber.objects.create(
+            normalized_number="202-555-0198",
+            assigned_family=self.river,
+        )
+        number, _ = ExternalPhoneNumber.objects.get_or_create_normalized("+1 212 555 0100")
+        FamilyContact.objects.create(
+            family=self.river,
+            external_phone_number=number,
+            label="Grandma",
+        )
+
+        configuration = build_asterisk_configuration()
+
+        self.assertIn(
+            (public_number.id, "+12125550100", "101"),
+            {
+                (
+                    rule.public_phone_number_id,
+                    rule.caller_normalized_number,
+                    rule.target_endpoint.extension,
+                )
+                for rule in configuration.inbound_external_caller_rules
+            },
+        )
+        self.assertNotIn(
+            (public_number.id, "+12125550100", "102"),
             {
                 (
                     rule.public_phone_number_id,

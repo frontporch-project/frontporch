@@ -65,7 +65,8 @@ def dashboard(request):
         "parent": parent,
         "children": children,
         "contacts": FamilyContact.objects.filter(family=parent.family).select_related(
-            "external_phone_number"
+            "external_phone_number",
+            "external_phone_number__dialable_extension",
         ),
         "contact_permissions": ExternalContactPermission.objects.filter(
             child__family=parent.family
@@ -217,6 +218,24 @@ def contact_create(request):
     else:
         form = FamilyContactForm()
     return render(request, "directory/form.html", {"form": form, "title": "Add Family Contact"})
+
+
+@login_required
+@transaction.atomic
+def contact_delete(request, contact_id):
+    parent = _require_parent(request)
+    if parent is None:
+        return redirect("logout")
+    contact = get_object_or_404(FamilyContact, id=contact_id, family=parent.family)
+    if request.method == "POST":
+        label = contact.label
+        ExternalContactPermission.objects.filter(
+            child__family=parent.family,
+            external_phone_number=contact.external_phone_number,
+        ).update(approved_by=None)
+        contact.delete()
+        messages.success(request, f"{label} was removed from your family contacts.")
+    return redirect("directory:dashboard")
 
 
 @login_required
