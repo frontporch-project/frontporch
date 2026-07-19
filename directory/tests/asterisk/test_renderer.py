@@ -180,6 +180,53 @@ class AsteriskConfigRendererTests(SimpleTestCase):
         self.assertIn("[frontporch-alex]", content)
         self.assertIn("exten => 2222,1,Dial(PJSIP/16465550100@voipms-endpoint,30)", content)
 
+    def test_outbound_caller_id_is_set_before_trunk_calls_when_configured(self):
+        configuration = AsteriskConfiguration(
+            endpoints=(self.alex_endpoint,),
+            landline_endpoints=(self.luca_landline,),
+            outbound_caller_id="2025550199",
+            dialplan_rules=(
+                DialplanRule(
+                    source_endpoint=self.alex_endpoint,
+                    target_endpoint=self.luca_landline,
+                ),
+            ),
+            external_dialplan_rules=(
+                ExternalDialplanRule(
+                    source_endpoint=self.alex_endpoint,
+                    external_number_extension_id=1,
+                    dialed_extension="3333",
+                    normalized_number="+12125550100",
+                ),
+            ),
+            shortcut_rules=(
+                DialShortcutRule(
+                    source_endpoint=self.alex_endpoint,
+                    digits="7",
+                    external_number_extension_id=1,
+                    normalized_number="+12125550100",
+                ),
+            ),
+        )
+
+        content = self.renderer.render_extensions(configuration)
+
+        self.assertIn(
+            "exten => 2222,1,Set(CALLERID(num)=2025550199)\n"
+            " same => n,Dial(PJSIP/16465550100@voipms-endpoint,30)",
+            content,
+        )
+        self.assertIn(
+            "exten => 3333,1,Set(CALLERID(num)=2025550199)\n"
+            " same => n,Dial(PJSIP/12125550100@voipms-endpoint,30)",
+            content,
+        )
+        self.assertIn(
+            "exten => 7,1,Set(CALLERID(num)=2025550199)\n"
+            " same => n,Dial(PJSIP/12125550100@voipms-endpoint,30)",
+            content,
+        )
+
     def test_extensions_include_public_inbound_did_test_context(self):
         content = self.renderer.render_extensions(self.configuration)
 

@@ -170,6 +170,18 @@ VOIPMS_SERVER
 VOIPMS_DID
 ```
 
+Set `ASTERISK_OUTBOUND_CALLER_ID` to an authorized outbound caller ID for the trunk
+before rendering generated config. For VoIP.ms, this is normally a 10-digit DID on
+the account:
+
+```bash
+ASTERISK_OUTBOUND_CALLER_ID=2025550199 uv run python manage.py render_asterisk_config
+```
+
+Without this, Asterisk may pass a child's private FrontPorch extension as caller ID
+on approved external calls. SIP providers commonly reject that call even though
+the generated FrontPorch permission route is correct.
+
 Use reserved example numbers such as `202-555-0199` in public tests and docs. Put real DIDs and caller IDs only in private deployment config or private database state.
 
 ## Child-Owned Landlines
@@ -196,6 +208,7 @@ Create a private `.env` from `.env.example`, replace placeholder secrets, and bi
 DJANGO_SECRET_KEY=replace-with-a-private-secret
 POSTGRES_PASSWORD=replace-with-a-private-password
 ASTERISK_AMI_PASSWORD=replace-with-a-private-password
+ASTERISK_OUTBOUND_CALLER_ID=2025550199
 FRONTPORCH_WEB_BIND_IP=100.64.0.10
 DJANGO_ALLOWED_HOSTS=100.64.0.10,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=http://100.64.0.10:8000

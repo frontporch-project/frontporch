@@ -1,6 +1,6 @@
 from datetime import time
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from directory.asterisk.builder import build_asterisk_configuration
 from directory.models import (
@@ -100,6 +100,12 @@ class AsteriskConfigurationBuilderTests(TestCase):
         )
         self.assertEqual(configuration.endpoints[0].auth_name, "alex-101")
         self.assertEqual(configuration.endpoints[0].aor_name, "alex-101")
+
+    @override_settings(ASTERISK_OUTBOUND_CALLER_ID="2025550199")
+    def test_outbound_caller_id_setting_is_included(self):
+        configuration = build_asterisk_configuration()
+
+        self.assertEqual(configuration.outbound_caller_id, "2025550199")
 
     def test_parent_and_family_devices_become_sip_endpoints(self):
         configuration = build_asterisk_configuration()

@@ -167,6 +167,7 @@ class PublicInboundNumber:
 class AsteriskConfiguration:
     endpoints: tuple[SipEndpoint, ...]
     dialplan_rules: tuple[DialplanRule, ...]
+    outbound_caller_id: str = ""
     landline_endpoints: tuple[LandlineChildEndpoint, ...] = ()
     external_dialplan_rules: tuple[ExternalDialplanRule, ...] = ()
     inbound_external_caller_rules: tuple[InboundExternalCallerRule, ...] = ()

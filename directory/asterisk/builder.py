@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from .domain import (
     AsteriskConfiguration,
     BlackoutWindow,
@@ -408,6 +410,7 @@ def build_asterisk_configuration():
     return AsteriskConfiguration(
         endpoints=endpoints,
         landline_endpoints=landline_endpoints,
+        outbound_caller_id=settings.ASTERISK_OUTBOUND_CALLER_ID,
         public_inbound_numbers=public_inbound_numbers,
         external_dialplan_rules=external_rules,
         inbound_external_caller_rules=inbound_external_caller_rules,

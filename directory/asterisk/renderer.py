@@ -62,7 +62,12 @@ class AsteriskConfigRenderer:
                 ]
             )
             for rule in shortcut_rules_by_context.get(endpoint.context_name, []):
-                lines.extend(self._render_shortcut_rule(rule))
+                lines.extend(
+                    self._render_shortcut_rule(
+                        rule,
+                        outbound_caller_id=configuration.outbound_caller_id,
+                    )
+                )
             for rule in rules_by_context.get(endpoint.context_name, []):
                 target = rule.target_endpoint
                 lines.extend(
@@ -70,6 +75,10 @@ class AsteriskConfigRenderer:
                         f"exten => {rule.dialed_extension},1,",
                         source_endpoint=rule.source_endpoint,
                         target_endpoint=target,
+                        outbound_caller_id=self._outbound_caller_id_for_target(
+                            target,
+                            configuration.outbound_caller_id,
+                        ),
                     )
                 )
             for rule in external_rules_by_context.get(endpoint.context_name, []):
@@ -78,6 +87,7 @@ class AsteriskConfigRenderer:
                         f"exten => {rule.dialed_extension},1,",
                         source_endpoint=rule.source_endpoint,
                         dial_target=f"PJSIP/{rule.outbound_number}@voipms-endpoint",
+                        outbound_caller_id=configuration.outbound_caller_id,
                     )
                 )
             lines.extend(
@@ -92,18 +102,24 @@ class AsteriskConfigRenderer:
 
         return "\n".join(lines).rstrip() + "\n"
 
-    def _render_shortcut_rule(self, rule):
+    def _render_shortcut_rule(self, rule, outbound_caller_id=""):
         if rule.is_external:
             dial_target = f"PJSIP/{rule.outbound_number}@voipms-endpoint"
             target_endpoint = None
+            caller_id = outbound_caller_id
         else:
             target_endpoint = rule.target_endpoint
             dial_target = target_endpoint.dial_target
+            caller_id = self._outbound_caller_id_for_target(
+                target_endpoint,
+                outbound_caller_id,
+            )
         return self._render_call_lines(
             f"exten => {rule.digits},1,",
             source_endpoint=rule.source_endpoint,
             target_endpoint=target_endpoint,
             dial_target=dial_target,
+            outbound_caller_id=caller_id,
         )
 
     def _render_call_lines(
@@ -112,12 +128,17 @@ class AsteriskConfigRenderer:
         source_endpoint=None,
         target_endpoint=None,
         dial_target=None,
+        outbound_caller_id="",
     ):
         if dial_target is None:
             dial_target = target_endpoint.dial_target
 
         blackout_checks = self._call_blackout_checks(source_endpoint, target_endpoint)
-        applications = blackout_checks + [
+        outbound_setup = []
+        if outbound_caller_id:
+            outbound_setup.append(f"Set(CALLERID(num)={outbound_caller_id})")
+
+        applications = blackout_checks + outbound_setup + [
             f"Dial({dial_target},30)",
             "Hangup()",
         ]
@@ -126,6 +147,11 @@ class AsteriskConfigRenderer:
             + [f" same => n,{application}" for application in applications[1:]]
             + [""]
         )
+
+    def _outbound_caller_id_for_target(self, target_endpoint, outbound_caller_id):
+        if outbound_caller_id and hasattr(target_endpoint, "child_landline_id"):
+            return outbound_caller_id
+        return ""
 
     def _call_blackout_checks(self, source_endpoint=None, target_endpoint=None):
         windows = []
